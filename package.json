@@ -1,0 +1,16 @@
+{
+  "name": "elm-viz",
+  "version": "1.0.0",
+  "description": "Fun with viz in Elm",
+  "repository": "https://github.com/Punie/elm-viz",
+  "author": "Hugo Saracino <hugo.saracino@gmail.com>",
+  "license": "BSD-3-Clause",
+  "scripts": {
+    "start": "elm-live src/Main.elm --path-to-elm=node_modules/.bin/elm --open --dir=static --start-page=index.html -- --output=static/js/elm.js --debug"
+  },
+  "devDependencies": {
+    "elm": "^0.19.0-bugfix2",
+    "elm-format": "^0.8.1",
+    "elm-live": "^3.2.3"
+  }
+}
