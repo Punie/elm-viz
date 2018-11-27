@@ -4,20 +4,20 @@
 
 ```bash
 # First clone the repo
-$ git clone https://github.com/Punie/elm-viz
+git clone https://github.com/Punie/elm-viz
 # cd into the project directory
-$ cd elm-viz
+cd elm-viz
 # ...and install the few dependencies
-$ npm install
+npm install
 ```
 
 ## Run
 
 ```bash
 # You can now start the project with live reload
-$ npm start
+npm start
 ```
 
-If your browser doesn't open automagically, go to [http://localhost:8001/](http://localhost:8001/).
+If your browser doesn't open automagically, go to [http://localhost:8000/](http://localhost:8000/).
 
 ## Profit :rocket:

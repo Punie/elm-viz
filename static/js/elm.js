@@ -5048,9 +5048,12 @@ function _Browser_load(url)
 var author$project$Main$GotData = function (a) {
 	return {$: 'GotData', a: a};
 };
-var author$project$Main$Model = F4(
-	function (first, second, data, errors) {
-		return {data: data, errors: errors, first: first, second: second};
+var author$project$Main$GotMoreData = function (a) {
+	return {$: 'GotMoreData', a: a};
+};
+var author$project$Main$Model = F6(
+	function (coord1, coord2, taxes, cities, selectedCity, csvValue) {
+		return {cities: cities, coord1: coord1, coord2: coord2, csvValue: csvValue, selectedCity: selectedCity, taxes: taxes};
 	});
 var elm$core$Basics$apR = F2(
 	function (x, f) {
@@ -5537,7 +5540,7 @@ var NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required = F3(
 			A2(elm$json$Json$Decode$field, key, valDecoder),
 			decoder);
 	});
-var author$project$Main$DataPoint = F4(
+var author$project$Main$Tax = F4(
 	function (rate, year, kind, city) {
 		return {city: city, kind: kind, rate: rate, year: year};
 	});
@@ -5573,7 +5576,7 @@ var author$project$Main$dataPointDecoder = function () {
 					NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
 					'taux',
 					elm$json$Json$Decode$float,
-					elm$json$Json$Decode$succeed(author$project$Main$DataPoint)))));
+					elm$json$Json$Decode$succeed(author$project$Main$Tax)))));
 }();
 var elm$core$List$foldrHelper = F4(
 	function (fn, acc, ctr, ls) {
@@ -5642,7 +5645,7 @@ var author$project$Main$dataPointsDecoder = A2(
 	elm$json$Json$Decode$list(author$project$Main$dataPointDecoder));
 var author$project$Main$mockJSON1 = '\n{\n    "data": [\n        { "x": 0, "y": 2 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 10 }\n    ]\n}\n';
 var author$project$Main$mockJSON2 = '\n{\n    "data": [\n        { "x": 0, "y": 0 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 8 }\n    ]\n}\n';
-var author$project$Main$Point = F2(
+var author$project$Main$Coordinates = F2(
 	function (x, y) {
 		return {x: x, y: y};
 	});
@@ -5654,15 +5657,13 @@ var author$project$Main$pointDecoder = A3(
 		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
 		'x',
 		elm$json$Json$Decode$float,
-		elm$json$Json$Decode$succeed(author$project$Main$Point)));
+		elm$json$Json$Decode$succeed(author$project$Main$Coordinates)));
 var author$project$Main$pointsDecoder = A2(
 	elm$json$Json$Decode$at,
 	_List_fromArray(
 		['data']),
 	elm$json$Json$Decode$list(author$project$Main$pointDecoder));
-var elm$core$Basics$identity = function (x) {
-	return x;
-};
+var elm$core$Platform$Cmd$batch = _Platform_batch;
 var elm$core$Result$mapError = F2(
 	function (f, result) {
 		if (result.$ === 'Ok') {
@@ -5679,6 +5680,9 @@ var elm$core$Basics$composeR = F3(
 		return g(
 			f(x));
 	});
+var elm$core$Basics$identity = function (x) {
+	return x;
+};
 var elm$core$Dict$RBEmpty_elm_builtin = {$: 'RBEmpty_elm_builtin'};
 var elm$core$Dict$empty = elm$core$Dict$RBEmpty_elm_builtin;
 var elm$core$Basics$compare = _Utils_compare;
@@ -6289,6 +6293,12 @@ var elm$http$Http$expectJson = F2(
 						A2(elm$json$Json$Decode$decodeString, decoder, string));
 				}));
 	});
+var elm$http$Http$expectString = function (toMsg) {
+	return A2(
+		elm$http$Http$expectStringResponse,
+		toMsg,
+		elm$http$Http$resolve(elm$core$Result$Ok));
+};
 var elm$http$Http$emptyBody = _Http_emptyBody;
 var elm$http$Http$Request = function (a) {
 	return {$: 'Request', a: a};
@@ -6486,17 +6496,315 @@ var elm$http$Http$get = function (r) {
 	return elm$http$Http$request(
 		{body: elm$http$Http$emptyBody, expect: r.expect, headers: _List_Nil, method: 'GET', timeout: elm$core$Maybe$Nothing, tracker: elm$core$Maybe$Nothing, url: r.url});
 };
+var krisajenkins$remotedata$RemoteData$Loading = {$: 'Loading'};
 var author$project$Main$init = function (_n0) {
-	var second = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON2);
-	var request = elm$http$Http$get(
+	var request2 = elm$http$Http$get(
+		{
+			expect: elm$http$Http$expectString(author$project$Main$GotMoreData),
+			url: 'https://pastebin.com/raw/ec5VV21w'
+		});
+	var request1 = elm$http$Http$get(
 		{
 			expect: A2(elm$http$Http$expectJson, author$project$Main$GotData, author$project$Main$dataPointsDecoder),
 			url: 'http://entrepot.metropolegrenoble.fr/opendata/Imposition/imposition.json'
 		});
-	var first = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON1);
+	var coord2 = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON2);
+	var coord1 = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON1);
 	return _Utils_Tuple2(
-		A4(author$project$Main$Model, first, second, elm$core$Maybe$Nothing, _List_Nil),
-		request);
+		A6(author$project$Main$Model, coord1, coord2, krisajenkins$remotedata$RemoteData$Loading, _List_Nil, elm$core$Maybe$Nothing, elm$core$Maybe$Nothing),
+		elm$core$Platform$Cmd$batch(
+			_List_fromArray(
+				[request1, request2])));
+};
+var author$project$Main$Parsed = function (a) {
+	return {$: 'Parsed', a: a};
+};
+var elm$json$Json$Decode$value = _Json_decodeValue;
+var author$project$Main$results = _Platform_incomingPort('results', elm$json$Json$Decode$value);
+var author$project$Main$subscriptions = function (_n0) {
+	return author$project$Main$results(author$project$Main$Parsed);
+};
+var elm$json$Json$Decode$decodeValue = _Json_run;
+var elm$json$Json$Decode$null = _Json_decodeNull;
+var elm$json$Json$Decode$oneOf = _Json_oneOf;
+var NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optionalDecoder = F3(
+	function (pathDecoder, valDecoder, fallback) {
+		var nullOr = function (decoder) {
+			return elm$json$Json$Decode$oneOf(
+				_List_fromArray(
+					[
+						decoder,
+						elm$json$Json$Decode$null(fallback)
+					]));
+		};
+		var handleResult = function (input) {
+			var _n0 = A2(elm$json$Json$Decode$decodeValue, pathDecoder, input);
+			if (_n0.$ === 'Ok') {
+				var rawValue = _n0.a;
+				var _n1 = A2(
+					elm$json$Json$Decode$decodeValue,
+					nullOr(valDecoder),
+					rawValue);
+				if (_n1.$ === 'Ok') {
+					var finalResult = _n1.a;
+					return elm$json$Json$Decode$succeed(finalResult);
+				} else {
+					var finalErr = _n1.a;
+					return elm$json$Json$Decode$fail(
+						elm$json$Json$Decode$errorToString(finalErr));
+				}
+			} else {
+				return elm$json$Json$Decode$succeed(fallback);
+			}
+		};
+		return A2(elm$json$Json$Decode$andThen, handleResult, elm$json$Json$Decode$value);
+	});
+var NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optional = F4(
+	function (key, valDecoder, fallback, decoder) {
+		return A2(
+			NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$custom,
+			A3(
+				NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optionalDecoder,
+				A2(elm$json$Json$Decode$field, key, elm$json$Json$Decode$value),
+				valDecoder,
+				fallback),
+			decoder);
+	});
+var author$project$Main$Astronaut = F6(
+	function (name, hoursInSpace, gender, selectionYear, status, category) {
+		return {category: category, gender: gender, hoursInSpace: hoursInSpace, name: name, selectionYear: selectionYear, status: status};
+	});
+var author$project$Main$Candidate = {$: 'Candidate'};
+var author$project$Main$Civilian = {$: 'Civilian'};
+var author$project$Main$Current = {$: 'Current'};
+var author$project$Main$Deceased = {$: 'Deceased'};
+var author$project$Main$Female = {$: 'Female'};
+var author$project$Main$Former = {$: 'Former'};
+var author$project$Main$Male = {$: 'Male'};
+var author$project$Main$Management = {$: 'Management'};
+var author$project$Main$Military = {$: 'Military'};
+var author$project$Main$Unknown = {$: 'Unknown'};
+var elm$json$Json$Decode$int = _Json_decodeInt;
+var elm$json$Json$Decode$map = _Json_map1;
+var elm$json$Json$Decode$nullable = function (decoder) {
+	return elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				elm$json$Json$Decode$null(elm$core$Maybe$Nothing),
+				A2(elm$json$Json$Decode$map, elm$core$Maybe$Just, decoder)
+			]));
+};
+var author$project$Main$astronautDecoder = function () {
+	var status = function (str) {
+		switch (str) {
+			case 'Former':
+				return elm$json$Json$Decode$succeed(author$project$Main$Former);
+			case 'Deceased':
+				return elm$json$Json$Decode$succeed(author$project$Main$Deceased);
+			case 'Current':
+				return elm$json$Json$Decode$succeed(author$project$Main$Current);
+			case 'Management':
+				return elm$json$Json$Decode$succeed(author$project$Main$Management);
+			case 'Candidate':
+				return elm$json$Json$Decode$succeed(author$project$Main$Candidate);
+			default:
+				return elm$json$Json$Decode$fail('Not a status');
+		}
+	};
+	var gender = function (str) {
+		switch (str) {
+			case 'Male':
+				return elm$json$Json$Decode$succeed(author$project$Main$Male);
+			case 'Female':
+				return elm$json$Json$Decode$succeed(author$project$Main$Female);
+			default:
+				return elm$json$Json$Decode$fail('Not a gender');
+		}
+	};
+	var category = function (str) {
+		switch (str) {
+			case 'Military':
+				return elm$json$Json$Decode$succeed(author$project$Main$Military);
+			case 'Civilian':
+				return elm$json$Json$Decode$succeed(author$project$Main$Civilian);
+			default:
+				return elm$json$Json$Decode$fail('Not a category');
+		}
+	};
+	return A4(
+		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optional,
+		'militaryorcivilian',
+		A2(elm$json$Json$Decode$andThen, category, elm$json$Json$Decode$string),
+		author$project$Main$Unknown,
+		A3(
+			NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+			'status',
+			A2(elm$json$Json$Decode$andThen, status, elm$json$Json$Decode$string),
+			A3(
+				NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+				'selectionyear',
+				elm$json$Json$Decode$int,
+				A3(
+					NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+					'gender',
+					A2(elm$json$Json$Decode$andThen, gender, elm$json$Json$Decode$string),
+					A3(
+						NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+						'cumulativehoursofspaceflighttime',
+						elm$json$Json$Decode$nullable(elm$json$Json$Decode$int),
+						A3(
+							NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+							'astronaut',
+							elm$json$Json$Decode$string,
+							elm$json$Json$Decode$succeed(author$project$Main$Astronaut)))))));
+}();
+var author$project$Main$astronautsDecoder = elm$json$Json$Decode$list(author$project$Main$astronautDecoder);
+var elm$json$Json$Encode$string = _Json_wrap;
+var author$project$Main$parseCSV = _Platform_outgoingPort('parseCSV', elm$json$Json$Encode$string);
+var elm$core$Debug$log = _Debug_log;
+var elm$core$List$map = F2(
+	function (f, xs) {
+		return A3(
+			elm$core$List$foldr,
+			F2(
+				function (x, acc) {
+					return A2(
+						elm$core$List$cons,
+						f(x),
+						acc);
+				}),
+			_List_Nil,
+			xs);
+	});
+var elm$core$Platform$Cmd$none = elm$core$Platform$Cmd$batch(_List_Nil);
+var elm$core$Result$toMaybe = function (result) {
+	if (result.$ === 'Ok') {
+		var v = result.a;
+		return elm$core$Maybe$Just(v);
+	} else {
+		return elm$core$Maybe$Nothing;
+	}
+};
+var elm$core$Set$Set_elm_builtin = function (a) {
+	return {$: 'Set_elm_builtin', a: a};
+};
+var elm$core$Set$empty = elm$core$Set$Set_elm_builtin(elm$core$Dict$empty);
+var elm$core$Set$insert = F2(
+	function (key, _n0) {
+		var dict = _n0.a;
+		return elm$core$Set$Set_elm_builtin(
+			A3(elm$core$Dict$insert, key, _Utils_Tuple0, dict));
+	});
+var elm$core$Set$fromList = function (list) {
+	return A3(elm$core$List$foldl, elm$core$Set$insert, elm$core$Set$empty, list);
+};
+var krisajenkins$remotedata$RemoteData$Failure = function (a) {
+	return {$: 'Failure', a: a};
+};
+var krisajenkins$remotedata$RemoteData$Success = function (a) {
+	return {$: 'Success', a: a};
+};
+var author$project$Main$update = F2(
+	function (msg, model) {
+		switch (msg.$) {
+			case 'GotData':
+				if (msg.a.$ === 'Ok') {
+					var data = msg.a.a;
+					var cities = elm$core$Set$toList(
+						elm$core$Set$fromList(
+							A2(
+								elm$core$List$map,
+								function ($) {
+									return $.city;
+								},
+								data)));
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{
+								cities: cities,
+								taxes: krisajenkins$remotedata$RemoteData$Success(data)
+							}),
+						elm$core$Platform$Cmd$none);
+				} else {
+					var err = msg.a.a;
+					return _Utils_Tuple2(
+						_Utils_update(
+							model,
+							{
+								taxes: krisajenkins$remotedata$RemoteData$Failure(err)
+							}),
+						elm$core$Platform$Cmd$none);
+				}
+			case 'SelectCity':
+				var city = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{
+							selectedCity: elm$core$Maybe$Just(city)
+						}),
+					elm$core$Platform$Cmd$none);
+			case 'GotMoreData':
+				if (msg.a.$ === 'Ok') {
+					var data = msg.a.a;
+					return _Utils_Tuple2(
+						model,
+						author$project$Main$parseCSV(data));
+				} else {
+					return _Utils_Tuple2(model, elm$core$Platform$Cmd$none);
+				}
+			default:
+				var value = msg.a;
+				var parsed = A2(elm$json$Json$Decode$decodeValue, author$project$Main$astronautsDecoder, value);
+				var _n1 = A2(elm$core$Debug$log, 'decoder', parsed);
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{
+							csvValue: elm$core$Result$toMaybe(parsed)
+						}),
+					elm$core$Platform$Cmd$none);
+		}
+	});
+var author$project$Main$SelectCity = function (a) {
+	return {$: 'SelectCity', a: a};
+};
+var elm$virtual_dom$VirtualDom$Normal = function (a) {
+	return {$: 'Normal', a: a};
+};
+var elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
+	switch (handler.$) {
+		case 'Normal':
+			return 0;
+		case 'MayStopPropagation':
+			return 1;
+		case 'MayPreventDefault':
+			return 2;
+		default:
+			return 3;
+	}
+};
+var elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
+var elm$html$Html$Events$on = F2(
+	function (event, decoder) {
+		return A2(
+			elm$virtual_dom$VirtualDom$on,
+			event,
+			elm$virtual_dom$VirtualDom$Normal(decoder));
+	});
+var author$project$Main$onChange = function (handler) {
+	return A2(
+		elm$html$Html$Events$on,
+		'change',
+		A2(
+			elm$json$Json$Decode$map,
+			handler,
+			A2(
+				elm$json$Json$Decode$at,
+				_List_fromArray(
+					['target', 'value']),
+				elm$json$Json$Decode$string)));
 };
 var elm$core$List$filter = F2(
 	function (isGood, list) {
@@ -6509,21 +6817,19 @@ var elm$core$List$filter = F2(
 			_List_Nil,
 			list);
 	});
-var elm$core$Platform$Cmd$batch = _Platform_batch;
-var elm$core$Platform$Cmd$none = elm$core$Platform$Cmd$batch(_List_Nil);
 var elm$core$String$contains = _String_contains;
-var author$project$Main$update = F2(
-	function (msg, model) {
-		if (msg.a.$ === 'Ok') {
-			var data = msg.a.a;
+var author$project$Main$toFiltered = F2(
+	function (mselectedCity, taxes) {
+		if (mselectedCity.$ === 'Just') {
+			var selectedCity = mselectedCity.a;
 			var filtered = A2(
 				elm$core$List$filter,
 				function (_n5) {
 					var city = _n5.city;
-					return city === 'Grenoble';
+					return _Utils_eq(city, selectedCity);
 				},
-				data);
-			var formatted = {
+				taxes);
+			return {
 				fnb: A2(
 					elm$core$List$filter,
 					function (_n1) {
@@ -6553,53 +6859,14 @@ var author$project$Main$update = F2(
 					},
 					filtered)
 			};
-			return _Utils_Tuple2(
-				_Utils_update(
-					model,
-					{
-						data: elm$core$Maybe$Just(formatted)
-					}),
-				elm$core$Platform$Cmd$none);
 		} else {
-			var err = msg.a.a;
-			return _Utils_Tuple2(
-				_Utils_update(
-					model,
-					{
-						errors: A2(elm$core$List$cons, err, model.errors)
-					}),
-				elm$core$Platform$Cmd$none);
+			return {fnb: _List_Nil, tfb: _List_Nil, th: _List_Nil, toem: _List_Nil};
 		}
 	});
-var elm$core$List$map = F2(
-	function (f, xs) {
-		return A3(
-			elm$core$List$foldr,
-			F2(
-				function (x, acc) {
-					return A2(
-						elm$core$List$cons,
-						f(x),
-						acc);
-				}),
-			_List_Nil,
-			xs);
-	});
-var elm$json$Json$Decode$map = _Json_map1;
-var elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
-	switch (handler.$) {
-		case 'Normal':
-			return 0;
-		case 'MayStopPropagation':
-			return 1;
-		case 'MayPreventDefault':
-			return 2;
-		default:
-			return 3;
-	}
-};
+var elm$html$Html$div = _VirtualDom_node('div');
 var elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var elm$html$Html$text = elm$virtual_dom$VirtualDom$text;
+var elm$core$List$map4 = _List_map4;
 var terezka$line_charts$Internal$Line$Series = function (a) {
 	return {$: 'Series', a: a};
 };
@@ -6612,7 +6879,35 @@ var terezka$line_charts$Internal$Line$line = F4(
 		return terezka$line_charts$Internal$Line$Series(
 			A5(terezka$line_charts$Internal$Line$SeriesConfig, color_, shape_, _List_Nil, label_, data_));
 	});
-var terezka$line_charts$LineChart$line = terezka$line_charts$Internal$Line$line;
+var avh4$elm_color$Color$RgbaSpace = F4(
+	function (a, b, c, d) {
+		return {$: 'RgbaSpace', a: a, b: b, c: c, d: d};
+	});
+var avh4$elm_color$Color$scaleFrom255 = function (c) {
+	return c / 255;
+};
+var avh4$elm_color$Color$rgb255 = F3(
+	function (r, g, b) {
+		return A4(
+			avh4$elm_color$Color$RgbaSpace,
+			avh4$elm_color$Color$scaleFrom255(r),
+			avh4$elm_color$Color$scaleFrom255(g),
+			avh4$elm_color$Color$scaleFrom255(b),
+			1.0);
+	});
+var terezka$line_charts$LineChart$Colors$blue = A3(avh4$elm_color$Color$rgb255, 3, 169, 244);
+var terezka$line_charts$LineChart$Colors$gold = A3(avh4$elm_color$Color$rgb255, 205, 145, 60);
+var terezka$line_charts$LineChart$Colors$pink = A3(avh4$elm_color$Color$rgb255, 245, 105, 215);
+var terezka$line_charts$LineChart$defaultColors = _List_fromArray(
+	[terezka$line_charts$LineChart$Colors$pink, terezka$line_charts$LineChart$Colors$blue, terezka$line_charts$LineChart$Colors$gold]);
+var terezka$line_charts$LineChart$defaultLabel = _List_fromArray(
+	['First', 'Second', 'Third']);
+var terezka$line_charts$Internal$Dots$Circle = {$: 'Circle'};
+var terezka$line_charts$Internal$Dots$Cross = {$: 'Cross'};
+var terezka$line_charts$Internal$Dots$Triangle = {$: 'Triangle'};
+var terezka$line_charts$LineChart$defaultShapes = _List_fromArray(
+	[terezka$line_charts$Internal$Dots$Circle, terezka$line_charts$Internal$Dots$Triangle, terezka$line_charts$Internal$Dots$Cross]);
+var terezka$line_charts$LineChart$defaultLines = A4(elm$core$List$map4, terezka$line_charts$Internal$Line$line, terezka$line_charts$LineChart$defaultColors, terezka$line_charts$LineChart$defaultShapes, terezka$line_charts$LineChart$defaultLabel);
 var terezka$line_charts$Internal$Area$None = {$: 'None'};
 var terezka$line_charts$Internal$Area$none = terezka$line_charts$Internal$Area$None;
 var terezka$line_charts$LineChart$Area$default = terezka$line_charts$Internal$Area$none;
@@ -7193,22 +7488,6 @@ var terezka$line_charts$Internal$Axis$Tick$Config = function (a) {
 	return {$: 'Config', a: a};
 };
 var terezka$line_charts$Internal$Axis$Tick$custom = terezka$line_charts$Internal$Axis$Tick$Config;
-var avh4$elm_color$Color$RgbaSpace = F4(
-	function (a, b, c, d) {
-		return {$: 'RgbaSpace', a: a, b: b, c: c, d: d};
-	});
-var avh4$elm_color$Color$scaleFrom255 = function (c) {
-	return c / 255;
-};
-var avh4$elm_color$Color$rgb255 = F3(
-	function (r, g, b) {
-		return A4(
-			avh4$elm_color$Color$RgbaSpace,
-			avh4$elm_color$Color$scaleFrom255(r),
-			avh4$elm_color$Color$scaleFrom255(g),
-			avh4$elm_color$Color$scaleFrom255(b),
-			1.0);
-	});
 var terezka$line_charts$LineChart$Colors$gray = A3(avh4$elm_color$Color$rgb255, 163, 163, 163);
 var terezka$line_charts$Internal$Axis$Tick$float = function (n) {
 	return terezka$line_charts$Internal$Axis$Tick$custom(
@@ -9789,7 +10068,6 @@ var terezka$line_charts$LineChart$clipPath = function (system) {
 				_List_Nil)
 			]));
 };
-var elm$html$Html$div = _VirtualDom_node('div');
 var terezka$line_charts$Internal$Container$sizeStyles = F3(
 	function (_n0, width, height) {
 		var properties_ = _n0.a;
@@ -10372,70 +10650,6 @@ var terezka$line_charts$LineChart$view = F2(
 		return terezka$line_charts$LineChart$viewCustom(
 			A2(terezka$line_charts$LineChart$defaultConfig, toX, toY));
 	});
-var terezka$line_charts$LineChart$Colors$blueLight = A3(avh4$elm_color$Color$rgb255, 128, 222, 234);
-var terezka$line_charts$LineChart$Colors$greenLight = A3(avh4$elm_color$Color$rgb255, 197, 225, 165);
-var terezka$line_charts$LineChart$Colors$purpleLight = A3(avh4$elm_color$Color$rgb255, 206, 147, 216);
-var terezka$line_charts$LineChart$Colors$redLight = A3(avh4$elm_color$Color$rgb255, 239, 154, 154);
-var terezka$line_charts$Internal$Dots$Circle = {$: 'Circle'};
-var terezka$line_charts$LineChart$Dots$circle = terezka$line_charts$Internal$Dots$Circle;
-var author$project$Main$viewData = F2(
-	function (mdata, errors) {
-		if (mdata.$ === 'Just') {
-			var data = mdata.a;
-			return A3(
-				terezka$line_charts$LineChart$view,
-				function ($) {
-					return $.year;
-				},
-				function ($) {
-					return $.rate;
-				},
-				_List_fromArray(
-					[
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$blueLight, terezka$line_charts$LineChart$Dots$circle, 'FNB', data.fnb),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$redLight, terezka$line_charts$LineChart$Dots$circle, 'TFB', data.tfb),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$greenLight, terezka$line_charts$LineChart$Dots$circle, 'TH', data.th),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$purpleLight, terezka$line_charts$LineChart$Dots$circle, 'TOEM', data.toem)
-					]));
-		} else {
-			var errorToString = function (error) {
-				switch (error.$) {
-					case 'BadUrl':
-						var url = error.a;
-						return 'Bad URL: ' + url;
-					case 'Timeout':
-						return 'Request timeout.';
-					case 'NetworkError':
-						return 'Network error.';
-					case 'BadStatus':
-						var n = error.a;
-						return 'Bad status: ' + elm$core$String$fromInt(n);
-					default:
-						var body = error.a;
-						return 'Bad body: ' + body;
-				}
-			};
-			return elm$html$Html$text(
-				A3(
-					elm$core$List$foldr,
-					elm$core$Basics$append,
-					'',
-					A2(elm$core$List$map, errorToString, errors)));
-		}
-	});
-var elm$core$List$map4 = _List_map4;
-var terezka$line_charts$LineChart$Colors$blue = A3(avh4$elm_color$Color$rgb255, 3, 169, 244);
-var terezka$line_charts$LineChart$Colors$gold = A3(avh4$elm_color$Color$rgb255, 205, 145, 60);
-var terezka$line_charts$LineChart$Colors$pink = A3(avh4$elm_color$Color$rgb255, 245, 105, 215);
-var terezka$line_charts$LineChart$defaultColors = _List_fromArray(
-	[terezka$line_charts$LineChart$Colors$pink, terezka$line_charts$LineChart$Colors$blue, terezka$line_charts$LineChart$Colors$gold]);
-var terezka$line_charts$LineChart$defaultLabel = _List_fromArray(
-	['First', 'Second', 'Third']);
-var terezka$line_charts$Internal$Dots$Cross = {$: 'Cross'};
-var terezka$line_charts$Internal$Dots$Triangle = {$: 'Triangle'};
-var terezka$line_charts$LineChart$defaultShapes = _List_fromArray(
-	[terezka$line_charts$Internal$Dots$Circle, terezka$line_charts$Internal$Dots$Triangle, terezka$line_charts$Internal$Dots$Cross]);
-var terezka$line_charts$LineChart$defaultLines = A4(elm$core$List$map4, terezka$line_charts$Internal$Line$line, terezka$line_charts$LineChart$defaultColors, terezka$line_charts$LineChart$defaultShapes, terezka$line_charts$LineChart$defaultLabel);
 var terezka$line_charts$LineChart$view1 = F3(
 	function (toX, toY, dataset) {
 		return A3(
@@ -10457,7 +10671,7 @@ var terezka$line_charts$LineChart$view2 = F4(
 					[dataset1, dataset2])));
 	});
 var author$project$Main$viewMocks = function (model) {
-	var _n0 = _Utils_Tuple2(model.first, model.second);
+	var _n0 = _Utils_Tuple2(model.coord1, model.coord2);
 	if (_n0.a.$ === 'Ok') {
 		if (_n0.b.$ === 'Ok') {
 			var data1 = _n0.a.a;
@@ -10519,6 +10733,85 @@ var author$project$Main$viewMocks = function (model) {
 		}
 	}
 };
+var terezka$line_charts$LineChart$line = terezka$line_charts$Internal$Line$line;
+var terezka$line_charts$LineChart$Colors$blueLight = A3(avh4$elm_color$Color$rgb255, 128, 222, 234);
+var terezka$line_charts$LineChart$Colors$greenLight = A3(avh4$elm_color$Color$rgb255, 197, 225, 165);
+var terezka$line_charts$LineChart$Colors$purpleLight = A3(avh4$elm_color$Color$rgb255, 206, 147, 216);
+var terezka$line_charts$LineChart$Colors$redLight = A3(avh4$elm_color$Color$rgb255, 239, 154, 154);
+var terezka$line_charts$LineChart$Dots$circle = terezka$line_charts$Internal$Dots$Circle;
+var author$project$Main$viewTaxes = function (rmdata) {
+	switch (rmdata.$) {
+		case 'Success':
+			var data = rmdata.a;
+			return A3(
+				terezka$line_charts$LineChart$view,
+				function ($) {
+					return $.year;
+				},
+				function ($) {
+					return $.rate;
+				},
+				_List_fromArray(
+					[
+						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$blueLight, terezka$line_charts$LineChart$Dots$circle, 'FNB', data.fnb),
+						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$redLight, terezka$line_charts$LineChart$Dots$circle, 'TFB', data.tfb),
+						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$greenLight, terezka$line_charts$LineChart$Dots$circle, 'TH', data.th),
+						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$purpleLight, terezka$line_charts$LineChart$Dots$circle, 'TOEM', data.toem)
+					]));
+		case 'Failure':
+			var err = rmdata.a;
+			var errorToString = function (error) {
+				switch (error.$) {
+					case 'BadUrl':
+						var url = error.a;
+						return 'Bad URL: ' + url;
+					case 'Timeout':
+						return 'Request timed out';
+					case 'NetworkError':
+						return 'Internet connection was lost';
+					case 'BadStatus':
+						var n = error.a;
+						return 'Response contained a bad status: ' + elm$core$String$fromInt(n);
+					default:
+						var body = error.a;
+						return 'Could not decode payload: ' + body;
+				}
+			};
+			return elm$html$Html$text(
+				errorToString(err));
+		case 'Loading':
+			return elm$html$Html$text('Loading...');
+		default:
+			return elm$html$Html$text('');
+	}
+};
+var elm$html$Html$option = _VirtualDom_node('option');
+var elm$html$Html$select = _VirtualDom_node('select');
+var elm$html$Html$Attributes$stringProperty = F2(
+	function (key, string) {
+		return A2(
+			_VirtualDom_property,
+			key,
+			elm$json$Json$Encode$string(string));
+	});
+var elm$html$Html$Attributes$value = elm$html$Html$Attributes$stringProperty('value');
+var krisajenkins$remotedata$RemoteData$NotAsked = {$: 'NotAsked'};
+var krisajenkins$remotedata$RemoteData$map = F2(
+	function (f, data) {
+		switch (data.$) {
+			case 'Success':
+				var value = data.a;
+				return krisajenkins$remotedata$RemoteData$Success(
+					f(value));
+			case 'Loading':
+				return krisajenkins$remotedata$RemoteData$Loading;
+			case 'NotAsked':
+				return krisajenkins$remotedata$RemoteData$NotAsked;
+			default:
+				var error = data.a;
+				return krisajenkins$remotedata$RemoteData$Failure(error);
+		}
+	});
 var author$project$Main$view = function (model) {
 	return A2(
 		elm$html$Html$div,
@@ -10526,7 +10819,34 @@ var author$project$Main$view = function (model) {
 		_List_fromArray(
 			[
 				author$project$Main$viewMocks(model),
-				A2(author$project$Main$viewData, model.data, model.errors)
+				A2(
+				elm$html$Html$select,
+				_List_fromArray(
+					[
+						elm$html$Html$Attributes$value(
+						A2(elm$core$Maybe$withDefault, '', model.selectedCity)),
+						author$project$Main$onChange(author$project$Main$SelectCity)
+					]),
+				A2(
+					elm$core$List$map,
+					function (city) {
+						return A2(
+							elm$html$Html$option,
+							_List_fromArray(
+								[
+									elm$html$Html$Attributes$value(city)
+								]),
+							_List_fromArray(
+								[
+									elm$html$Html$text(city)
+								]));
+					},
+					A2(elm$core$List$cons, '', model.cities))),
+				author$project$Main$viewTaxes(
+				A2(
+					krisajenkins$remotedata$RemoteData$map,
+					author$project$Main$toFiltered(model.selectedCity),
+					model.taxes))
 			]));
 };
 var elm$browser$Browser$External = function (a) {
@@ -10733,14 +11053,6 @@ var elm$browser$Debugger$Overlay$viewProblemType = function (_n0) {
 var elm$html$Html$a = _VirtualDom_node('a');
 var elm$html$Html$p = _VirtualDom_node('p');
 var elm$html$Html$ul = _VirtualDom_node('ul');
-var elm$json$Json$Encode$string = _Json_wrap;
-var elm$html$Html$Attributes$stringProperty = F2(
-	function (key, string) {
-		return A2(
-			_VirtualDom_property,
-			key,
-			elm$json$Json$Encode$string(string));
-	});
 var elm$html$Html$Attributes$href = function (url) {
 	return A2(
 		elm$html$Html$Attributes$stringProperty,
@@ -10797,17 +11109,6 @@ var elm$browser$Debugger$Overlay$viewBadMetadata = function (_n0) {
 var elm$browser$Debugger$Overlay$Cancel = {$: 'Cancel'};
 var elm$browser$Debugger$Overlay$Proceed = {$: 'Proceed'};
 var elm$html$Html$button = _VirtualDom_node('button');
-var elm$virtual_dom$VirtualDom$Normal = function (a) {
-	return {$: 'Normal', a: a};
-};
-var elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
-var elm$html$Html$Events$on = F2(
-	function (event, decoder) {
-		return A2(
-			elm$virtual_dom$VirtualDom$on,
-			event,
-			elm$virtual_dom$VirtualDom$Normal(decoder));
-	});
 var elm$html$Html$Events$onClick = function (msg) {
 	return A2(
 		elm$html$Html$Events$on,
@@ -12644,7 +12945,6 @@ var elm$browser$Debugger$Metadata$isPortable = function (_n0) {
 			A2(elm$browser$Debugger$Metadata$Error, types.message, problems));
 	}
 };
-var elm$json$Json$Decode$decodeValue = _Json_run;
 var elm$browser$Debugger$Metadata$decode = function (value) {
 	var _n0 = A2(elm$json$Json$Decode$decodeValue, elm$browser$Debugger$Metadata$decoder, value);
 	if (_n0.$ === 'Err') {
@@ -13391,7 +13691,6 @@ var elm$browser$Debugger$Main$download = F2(
 			A2(_Debugger_download, historyLength, json));
 	});
 var elm$browser$Debugger$History$jsToElm = _Debugger_unsafeCoerce;
-var elm$json$Json$Decode$value = _Json_decodeValue;
 var elm$browser$Debugger$History$decoder = F2(
 	function (initialModel, update) {
 		var addMessage = F2(
@@ -14101,16 +14400,7 @@ var elm$url$Url$fromString = function (str) {
 		A2(elm$core$String$dropLeft, 8, str)) : elm$core$Maybe$Nothing);
 };
 var elm$browser$Browser$element = _Browser_element;
-var elm$core$Platform$Sub$batch = _Platform_batch;
-var elm$core$Platform$Sub$none = elm$core$Platform$Sub$batch(_List_Nil);
 var author$project$Main$main = elm$browser$Browser$element(
-	{
-		init: author$project$Main$init,
-		subscriptions: function (_n0) {
-			return elm$core$Platform$Sub$none;
-		},
-		update: author$project$Main$update,
-		view: author$project$Main$view
-	});
+	{init: author$project$Main$init, subscriptions: author$project$Main$subscriptions, update: author$project$Main$update, view: author$project$Main$view});
 _Platform_export({'Main':{'init':author$project$Main$main(
-	elm$json$Json$Decode$succeed(_Utils_Tuple0))({"versions":{"elm":"0.19.0"},"types":{"message":"Main.Msg","aliases":{"Main.DataPoint":{"args":[],"type":"{ rate : Basics.Float, year : Basics.Float, kind : String.String, city : String.String }"}},"unions":{"Main.Msg":{"args":[],"tags":{"GotData":["Result.Result Http.Error (List.List Main.DataPoint)"]}},"Basics.Float":{"args":[],"tags":{"Float":[]}},"List.List":{"args":["a"],"tags":{}},"Result.Result":{"args":["error","value"],"tags":{"Ok":["value"],"Err":["error"]}},"String.String":{"args":[],"tags":{"String":[]}},"Http.Error":{"args":[],"tags":{"BadUrl":["String.String"],"Timeout":[],"NetworkError":[],"BadStatus":["Basics.Int"],"BadBody":["String.String"]}},"Basics.Int":{"args":[],"tags":{"Int":[]}}}}})}});}(this));
+	elm$json$Json$Decode$succeed(_Utils_Tuple0))({"versions":{"elm":"0.19.0"},"types":{"message":"Main.Msg","aliases":{"Main.Tax":{"args":[],"type":"{ rate : Basics.Float, year : Basics.Float, kind : String.String, city : String.String }"},"Json.Decode.Value":{"args":[],"type":"Json.Encode.Value"}},"unions":{"Main.Msg":{"args":[],"tags":{"GotData":["Result.Result Http.Error (List.List Main.Tax)"],"SelectCity":["String.String"],"GotMoreData":["Result.Result Http.Error String.String"],"Parsed":["Json.Decode.Value"]}},"Basics.Float":{"args":[],"tags":{"Float":[]}},"List.List":{"args":["a"],"tags":{}},"Result.Result":{"args":["error","value"],"tags":{"Ok":["value"],"Err":["error"]}},"String.String":{"args":[],"tags":{"String":[]}},"Http.Error":{"args":[],"tags":{"BadUrl":["String.String"],"Timeout":[],"NetworkError":[],"BadStatus":["Basics.Int"],"BadBody":["String.String"]}},"Json.Encode.Value":{"args":[],"tags":{"Value":[]}},"Basics.Int":{"args":[],"tags":{"Int":[]}}}}})}});}(this));

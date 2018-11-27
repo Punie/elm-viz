@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <title>Elm Viz</title>
+  <script src="js/papaparse.min.js"></script>
   <script src="js/elm.js"></script>
 </head>
 
@@ -12,6 +13,29 @@
   <script>
     var app = Elm.Main.init({
       node: document.getElementById('elm')
+    });
+
+    app.ports.parseCSV.subscribe(csv => {
+      var results = Papa.parse(csv, {
+        header: true,
+        transformHeader: function (header) {
+          return header.replace('#', 'nb').split(/\s/).join('').toLowerCase().trim();
+        },
+        transform: function (value) {
+          return value.trim();
+        },
+        skipEmptyLines: true,
+        dynamicTyping: true
+      });
+
+      console.log(results.data);
+      console.log(new Set(results.data.map(obj => obj.status)).values());
+      console.log(new Set(results.data.map(obj => obj.militaryorcivilian)).values());
+      console.log(new Set(results.data.map(obj => obj.gender)).values());
+      console.log(new Set(results.data.map(obj => obj.job)).values());
+      console.log(new Set(results.data.map(obj => obj.missionsflown)).values());
+
+      app.ports.results.send(results.data);
     });
   </script>
 </body>
