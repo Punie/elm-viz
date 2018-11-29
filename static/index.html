@@ -28,13 +28,6 @@
         dynamicTyping: true
       });
 
-      console.log(results.data);
-      console.log(new Set(results.data.map(obj => obj.status)).values());
-      console.log(new Set(results.data.map(obj => obj.militaryorcivilian)).values());
-      console.log(new Set(results.data.map(obj => obj.gender)).values());
-      console.log(new Set(results.data.map(obj => obj.job)).values());
-      console.log(new Set(results.data.map(obj => obj.missionsflown)).values());
-
       app.ports.results.send(results.data);
     });
   </script>

@@ -2489,6 +2489,151 @@ function _Http_track(router, xhr, tracker)
 }
 
 
+// DECODER
+
+var _File_decoder = _Json_decodePrim(function(value) {
+	// NOTE: checks if `File` exists in case this is run on node
+	return (typeof File === 'function' && value instanceof File)
+		? elm$core$Result$Ok(value)
+		: _Json_expecting('a FILE', value);
+});
+
+
+// METADATA
+
+function _File_name(file) { return file.name; }
+function _File_mime(file) { return file.type; }
+function _File_size(file) { return file.size; }
+
+function _File_lastModified(file)
+{
+	return elm$time$Time$millisToPosix(file.lastModified);
+}
+
+
+// DOWNLOAD
+
+var _File_downloadNode;
+
+function _File_getDownloadNode()
+{
+	return _File_downloadNode || (_File_downloadNode = document.createElementNS('http://www.w3.org/1999/xhtml', 'a'));
+}
+
+var _File_download = F3(function(name, mime, content)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var blob = new Blob([content], {type: mime});
+
+		// for IE10+
+		if (navigator.msSaveOrOpenBlob)
+		{
+			navigator.msSaveOrOpenBlob(blob, name);
+			return;
+		}
+
+		// for HTML5
+		var node = _File_getDownloadNode();
+		var objectUrl = URL.createObjectURL(blob);
+		node.setAttribute('href', objectUrl);
+		node.setAttribute('download', name);
+		node.dispatchEvent(new MouseEvent('click'));
+		URL.revokeObjectURL(objectUrl);
+	});
+});
+
+function _File_downloadUrl(href)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var node = _File_getDownloadNode();
+		node.setAttribute('href', href);
+		node.setAttribute('download', '');
+		node.dispatchEvent(new MouseEvent('click'));
+	});
+}
+
+
+// UPLOAD
+
+function _File_uploadOne(mimes)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var node = document.createElementNS('http://www.w3.org/1999/xhtml', 'input');
+		node.setAttribute('type', 'file');
+		node.setAttribute('accept', A2(elm$core$String$join, ',', mimes));
+		node.addEventListener('change', function(event)
+		{
+			callback(_Scheduler_succeed(event.target.files[0]));
+		});
+		node.dispatchEvent(new MouseEvent('click'));
+	});
+}
+
+function _File_uploadOneOrMore(mimes)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var node = document.createElementNS('http://www.w3.org/1999/xhtml', 'input');
+		node.setAttribute('type', 'file');
+		node.setAttribute('accept', A2(elm$core$String$join, ',', mimes));
+		node.setAttribute('multiple', '');
+		node.addEventListener('change', function(event)
+		{
+			var elmFiles = _List_fromArray(event.target.files);
+			callback(_Scheduler_succeed(_Utils_Tuple2(elmFiles.a, elmFiles.b)));
+		});
+		node.dispatchEvent(new MouseEvent('click'));
+	});
+}
+
+
+// CONTENT
+
+function _File_toString(blob)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var reader = new FileReader();
+		reader.addEventListener('loadend', function() {
+			callback(_Scheduler_succeed(reader.result));
+		});
+		reader.readAsText(blob);
+		return function() { reader.abort(); };
+	});
+}
+
+function _File_toBytes(blob)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var reader = new FileReader();
+		reader.addEventListener('loadend', function() {
+			callback(_Scheduler_succeed(new DataView(reader.result)));
+		});
+		reader.readAsArrayBuffer(blob);
+		return function() { reader.abort(); };
+	});
+}
+
+function _File_toUrl(blob)
+{
+	return _Scheduler_binding(function(callback)
+	{
+		var reader = new FileReader();
+		reader.addEventListener('loadend', function() {
+			callback(_Scheduler_succeed(reader.result));
+		});
+		reader.readAsDataURL(blob);
+		return function() { reader.abort(); };
+	});
+}
+
+
+
+
 
 // HELPERS
 
@@ -4083,6 +4228,107 @@ var _Bitwise_shiftRightZfBy = F2(function(offset, a)
 });
 
 
+// CREATE
+
+var _Regex_never = /.^/;
+
+var _Regex_fromStringWith = F2(function(options, string)
+{
+	var flags = 'g';
+	if (options.multiline) { flags += 'm'; }
+	if (options.caseInsensitive) { flags += 'i'; }
+
+	try
+	{
+		return elm$core$Maybe$Just(new RegExp(string, flags));
+	}
+	catch(error)
+	{
+		return elm$core$Maybe$Nothing;
+	}
+});
+
+
+// USE
+
+var _Regex_contains = F2(function(re, string)
+{
+	return string.match(re) !== null;
+});
+
+
+var _Regex_findAtMost = F3(function(n, re, str)
+{
+	var out = [];
+	var number = 0;
+	var string = str;
+	var lastIndex = re.lastIndex;
+	var prevLastIndex = -1;
+	var result;
+	while (number++ < n && (result = re.exec(string)))
+	{
+		if (prevLastIndex == re.lastIndex) break;
+		var i = result.length - 1;
+		var subs = new Array(i);
+		while (i > 0)
+		{
+			var submatch = result[i];
+			subs[--i] = submatch
+				? elm$core$Maybe$Just(submatch)
+				: elm$core$Maybe$Nothing;
+		}
+		out.push(A4(elm$regex$Regex$Match, result[0], result.index, number, _List_fromArray(subs)));
+		prevLastIndex = re.lastIndex;
+	}
+	re.lastIndex = lastIndex;
+	return _List_fromArray(out);
+});
+
+
+var _Regex_replaceAtMost = F4(function(n, re, replacer, string)
+{
+	var count = 0;
+	function jsReplacer(match)
+	{
+		if (count++ >= n)
+		{
+			return match;
+		}
+		var i = arguments.length - 3;
+		var submatches = new Array(i);
+		while (i > 0)
+		{
+			var submatch = arguments[i];
+			submatches[--i] = submatch
+				? elm$core$Maybe$Just(submatch)
+				: elm$core$Maybe$Nothing;
+		}
+		return replacer(A4(elm$regex$Regex$Match, match, arguments[arguments.length - 2], count, _List_fromArray(submatches)));
+	}
+	return string.replace(re, jsReplacer);
+});
+
+var _Regex_splitAtMost = F3(function(n, re, str)
+{
+	var string = str;
+	var out = [];
+	var start = re.lastIndex;
+	var restoreLastIndex = re.lastIndex;
+	while (n--)
+	{
+		var result = re.exec(string);
+		if (!result) break;
+		out.push(string.slice(start, result.index));
+		start = re.lastIndex;
+	}
+	out.push(string.slice(start));
+	re.lastIndex = restoreLastIndex;
+	return _List_fromArray(out);
+});
+
+var _Regex_infinity = Infinity;
+
+
 
 
 // HELPERS
@@ -5051,9 +5297,9 @@ var author$project$Main$GotData = function (a) {
 var author$project$Main$GotMoreData = function (a) {
 	return {$: 'GotMoreData', a: a};
 };
-var author$project$Main$Model = F6(
-	function (coord1, coord2, taxes, cities, selectedCity, csvValue) {
-		return {cities: cities, coord1: coord1, coord2: coord2, csvValue: csvValue, selectedCity: selectedCity, taxes: taxes};
+var author$project$Main$Model = F7(
+	function (points1, points2, taxes, cities, selectedCity, csvValue, file) {
+		return {cities: cities, csvValue: csvValue, file: file, points1: points1, points2: points2, selectedCity: selectedCity, taxes: taxes};
 	});
 var elm$core$Basics$apR = F2(
 	function (x, f) {
@@ -5540,44 +5786,21 @@ var NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required = F3(
 			A2(elm$json$Json$Decode$field, key, valDecoder),
 			decoder);
 	});
-var author$project$Main$Tax = F4(
-	function (rate, year, kind, city) {
-		return {city: city, kind: kind, rate: rate, year: year};
+var author$project$Point$Point = F2(
+	function (x, y) {
+		return {x: x, y: y};
 	});
-var elm$core$String$toFloat = _String_toFloat;
-var elm$json$Json$Decode$andThen = _Json_andThen;
-var elm$json$Json$Decode$fail = _Json_fail;
 var elm$json$Json$Decode$float = _Json_decodeFloat;
-var elm$json$Json$Decode$string = _Json_decodeString;
 var elm$json$Json$Decode$succeed = _Json_succeed;
-var author$project$Main$dataPointDecoder = function () {
-	var year = function (str) {
-		var _n0 = elm$core$String$toFloat(str);
-		if (_n0.$ === 'Nothing') {
-			return elm$json$Json$Decode$fail('Not a valid INT');
-		} else {
-			var n = _n0.a;
-			return elm$json$Json$Decode$succeed(n);
-		}
-	};
-	return A3(
+var author$project$Point$point = A3(
+	NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+	'y',
+	elm$json$Json$Decode$float,
+	A3(
 		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-		'Commune',
-		elm$json$Json$Decode$string,
-		A3(
-			NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-			'type',
-			elm$json$Json$Decode$string,
-			A3(
-				NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-				'annee',
-				A2(elm$json$Json$Decode$andThen, year, elm$json$Json$Decode$string),
-				A3(
-					NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-					'taux',
-					elm$json$Json$Decode$float,
-					elm$json$Json$Decode$succeed(author$project$Main$Tax)))));
-}();
+		'x',
+		elm$json$Json$Decode$float,
+		elm$json$Json$Decode$succeed(author$project$Point$Point)));
 var elm$core$List$foldrHelper = F4(
 	function (fn, acc, ctr, ls) {
 		if (!ls.b) {
@@ -5638,31 +5861,54 @@ var elm$json$Json$Decode$at = F2(
 		return A3(elm$core$List$foldr, elm$json$Json$Decode$field, decoder, fields);
 	});
 var elm$json$Json$Decode$list = _Json_decodeList;
-var author$project$Main$dataPointsDecoder = A2(
+var author$project$Point$decoder = A2(
 	elm$json$Json$Decode$at,
 	_List_fromArray(
 		['data']),
-	elm$json$Json$Decode$list(author$project$Main$dataPointDecoder));
-var author$project$Main$mockJSON1 = '\n{\n    "data": [\n        { "x": 0, "y": 2 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 10 }\n    ]\n}\n';
-var author$project$Main$mockJSON2 = '\n{\n    "data": [\n        { "x": 0, "y": 0 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 8 }\n    ]\n}\n';
-var author$project$Main$Coordinates = F2(
-	function (x, y) {
-		return {x: x, y: y};
+	elm$json$Json$Decode$list(author$project$Point$point));
+var author$project$Point$mock1 = '\n{\n    "data": [\n        { "x": 0, "y": 2 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 10 }\n    ]\n}\n';
+var author$project$Point$mock2 = '\n{\n    "data": [\n        { "x": 0, "y": 0 },\n        { "x": 5, "y": 5 },\n        { "x": 10, "y": 8 }\n    ]\n}\n';
+var author$project$Tax$Tax = F4(
+	function (rate, year, kind, city) {
+		return {city: city, kind: kind, rate: rate, year: year};
 	});
-var author$project$Main$pointDecoder = A3(
-	NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-	'y',
-	elm$json$Json$Decode$float,
-	A3(
+var elm$core$String$toFloat = _String_toFloat;
+var elm$json$Json$Decode$andThen = _Json_andThen;
+var elm$json$Json$Decode$fail = _Json_fail;
+var elm$json$Json$Decode$string = _Json_decodeString;
+var author$project$Tax$tax = function () {
+	var year = function (str) {
+		var _n0 = elm$core$String$toFloat(str);
+		if (_n0.$ === 'Just') {
+			var n = _n0.a;
+			return elm$json$Json$Decode$succeed(n);
+		} else {
+			return elm$json$Json$Decode$fail('Not a valid INT');
+		}
+	};
+	return A3(
 		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-		'x',
-		elm$json$Json$Decode$float,
-		elm$json$Json$Decode$succeed(author$project$Main$Coordinates)));
-var author$project$Main$pointsDecoder = A2(
+		'Commune',
+		elm$json$Json$Decode$string,
+		A3(
+			NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+			'type',
+			elm$json$Json$Decode$string,
+			A3(
+				NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+				'annee',
+				A2(elm$json$Json$Decode$andThen, year, elm$json$Json$Decode$string),
+				A3(
+					NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+					'taux',
+					elm$json$Json$Decode$float,
+					elm$json$Json$Decode$succeed(author$project$Tax$Tax)))));
+}();
+var author$project$Tax$decoder = A2(
 	elm$json$Json$Decode$at,
 	_List_fromArray(
 		['data']),
-	elm$json$Json$Decode$list(author$project$Main$pointDecoder));
+	elm$json$Json$Decode$list(author$project$Tax$tax));
 var elm$core$Platform$Cmd$batch = _Platform_batch;
 var elm$core$Result$mapError = F2(
 	function (f, result) {
@@ -6505,24 +6751,24 @@ var author$project$Main$init = function (_n0) {
 		});
 	var request1 = elm$http$Http$get(
 		{
-			expect: A2(elm$http$Http$expectJson, author$project$Main$GotData, author$project$Main$dataPointsDecoder),
+			expect: A2(elm$http$Http$expectJson, author$project$Main$GotData, author$project$Tax$decoder),
 			url: 'http://entrepot.metropolegrenoble.fr/opendata/Imposition/imposition.json'
 		});
-	var coord2 = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON2);
-	var coord1 = A2(elm$json$Json$Decode$decodeString, author$project$Main$pointsDecoder, author$project$Main$mockJSON1);
+	var coord2 = A2(elm$json$Json$Decode$decodeString, author$project$Point$decoder, author$project$Point$mock2);
+	var coord1 = A2(elm$json$Json$Decode$decodeString, author$project$Point$decoder, author$project$Point$mock1);
 	return _Utils_Tuple2(
-		A6(author$project$Main$Model, coord1, coord2, krisajenkins$remotedata$RemoteData$Loading, _List_Nil, elm$core$Maybe$Nothing, elm$core$Maybe$Nothing),
+		A7(author$project$Main$Model, coord1, coord2, krisajenkins$remotedata$RemoteData$Loading, _List_Nil, elm$core$Maybe$Nothing, elm$core$Maybe$Nothing, elm$core$Maybe$Nothing),
 		elm$core$Platform$Cmd$batch(
 			_List_fromArray(
 				[request1, request2])));
 };
+var elm$json$Json$Decode$value = _Json_decodeValue;
+var author$project$Astronaut$results = _Platform_incomingPort('results', elm$json$Json$Decode$value);
 var author$project$Main$Parsed = function (a) {
 	return {$: 'Parsed', a: a};
 };
-var elm$json$Json$Decode$value = _Json_decodeValue;
-var author$project$Main$results = _Platform_incomingPort('results', elm$json$Json$Decode$value);
 var author$project$Main$subscriptions = function (_n0) {
-	return author$project$Main$results(author$project$Main$Parsed);
+	return author$project$Astronaut$results(author$project$Main$Parsed);
 };
 var elm$json$Json$Decode$decodeValue = _Json_run;
 var elm$json$Json$Decode$null = _Json_decodeNull;
@@ -6570,20 +6816,56 @@ var NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optional = F4(
 				fallback),
 			decoder);
 	});
-var author$project$Main$Astronaut = F6(
+var author$project$Astronaut$Astronaut = F6(
 	function (name, hoursInSpace, gender, selectionYear, status, category) {
 		return {category: category, gender: gender, hoursInSpace: hoursInSpace, name: name, selectionYear: selectionYear, status: status};
 	});
-var author$project$Main$Candidate = {$: 'Candidate'};
-var author$project$Main$Civilian = {$: 'Civilian'};
-var author$project$Main$Current = {$: 'Current'};
-var author$project$Main$Deceased = {$: 'Deceased'};
-var author$project$Main$Female = {$: 'Female'};
-var author$project$Main$Former = {$: 'Former'};
-var author$project$Main$Male = {$: 'Male'};
-var author$project$Main$Management = {$: 'Management'};
-var author$project$Main$Military = {$: 'Military'};
-var author$project$Main$Unknown = {$: 'Unknown'};
+var author$project$Astronaut$Unknown = {$: 'Unknown'};
+var author$project$Astronaut$Civilian = {$: 'Civilian'};
+var author$project$Astronaut$Military = {$: 'Military'};
+var author$project$Astronaut$category = function (str) {
+	switch (str) {
+		case 'Military':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Military);
+		case 'Civilian':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Civilian);
+		default:
+			return elm$json$Json$Decode$fail('Not a category');
+	}
+};
+var author$project$Astronaut$Female = {$: 'Female'};
+var author$project$Astronaut$Male = {$: 'Male'};
+var author$project$Astronaut$gender = function (str) {
+	switch (str) {
+		case 'Male':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Male);
+		case 'Female':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Female);
+		default:
+			return elm$json$Json$Decode$fail('Not a gender');
+	}
+};
+var author$project$Astronaut$Candidate = {$: 'Candidate'};
+var author$project$Astronaut$Current = {$: 'Current'};
+var author$project$Astronaut$Deceased = {$: 'Deceased'};
+var author$project$Astronaut$Former = {$: 'Former'};
+var author$project$Astronaut$Management = {$: 'Management'};
+var author$project$Astronaut$status = function (str) {
+	switch (str) {
+		case 'Former':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Former);
+		case 'Deceased':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Deceased);
+		case 'Current':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Current);
+		case 'Management':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Management);
+		case 'Candidate':
+			return elm$json$Json$Decode$succeed(author$project$Astronaut$Candidate);
+		default:
+			return elm$json$Json$Decode$fail('Not a status');
+	}
+};
 var elm$json$Json$Decode$int = _Json_decodeInt;
 var elm$json$Json$Decode$map = _Json_map1;
 var elm$json$Json$Decode$nullable = function (decoder) {
@@ -6594,74 +6876,41 @@ var elm$json$Json$Decode$nullable = function (decoder) {
 				A2(elm$json$Json$Decode$map, elm$core$Maybe$Just, decoder)
 			]));
 };
-var author$project$Main$astronautDecoder = function () {
-	var status = function (str) {
-		switch (str) {
-			case 'Former':
-				return elm$json$Json$Decode$succeed(author$project$Main$Former);
-			case 'Deceased':
-				return elm$json$Json$Decode$succeed(author$project$Main$Deceased);
-			case 'Current':
-				return elm$json$Json$Decode$succeed(author$project$Main$Current);
-			case 'Management':
-				return elm$json$Json$Decode$succeed(author$project$Main$Management);
-			case 'Candidate':
-				return elm$json$Json$Decode$succeed(author$project$Main$Candidate);
-			default:
-				return elm$json$Json$Decode$fail('Not a status');
-		}
-	};
-	var gender = function (str) {
-		switch (str) {
-			case 'Male':
-				return elm$json$Json$Decode$succeed(author$project$Main$Male);
-			case 'Female':
-				return elm$json$Json$Decode$succeed(author$project$Main$Female);
-			default:
-				return elm$json$Json$Decode$fail('Not a gender');
-		}
-	};
-	var category = function (str) {
-		switch (str) {
-			case 'Military':
-				return elm$json$Json$Decode$succeed(author$project$Main$Military);
-			case 'Civilian':
-				return elm$json$Json$Decode$succeed(author$project$Main$Civilian);
-			default:
-				return elm$json$Json$Decode$fail('Not a category');
-		}
-	};
-	return A4(
-		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optional,
-		'militaryorcivilian',
-		A2(elm$json$Json$Decode$andThen, category, elm$json$Json$Decode$string),
-		author$project$Main$Unknown,
+var author$project$Astronaut$astronaut = A4(
+	NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$optional,
+	'militaryorcivilian',
+	A2(elm$json$Json$Decode$andThen, author$project$Astronaut$category, elm$json$Json$Decode$string),
+	author$project$Astronaut$Unknown,
+	A3(
+		NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
+		'status',
+		A2(elm$json$Json$Decode$andThen, author$project$Astronaut$status, elm$json$Json$Decode$string),
 		A3(
 			NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-			'status',
-			A2(elm$json$Json$Decode$andThen, status, elm$json$Json$Decode$string),
+			'selectionyear',
+			elm$json$Json$Decode$int,
 			A3(
 				NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-				'selectionyear',
-				elm$json$Json$Decode$int,
+				'gender',
+				A2(elm$json$Json$Decode$andThen, author$project$Astronaut$gender, elm$json$Json$Decode$string),
 				A3(
 					NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-					'gender',
-					A2(elm$json$Json$Decode$andThen, gender, elm$json$Json$Decode$string),
+					'cumulativehoursofspaceflighttime',
+					elm$json$Json$Decode$nullable(elm$json$Json$Decode$int),
 					A3(
 						NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-						'cumulativehoursofspaceflighttime',
-						elm$json$Json$Decode$nullable(elm$json$Json$Decode$int),
-						A3(
-							NoRedInk$elm_json_decode_pipeline$Json$Decode$Pipeline$required,
-							'astronaut',
-							elm$json$Json$Decode$string,
-							elm$json$Json$Decode$succeed(author$project$Main$Astronaut)))))));
-}();
-var author$project$Main$astronautsDecoder = elm$json$Json$Decode$list(author$project$Main$astronautDecoder);
+						'astronaut',
+						elm$json$Json$Decode$string,
+						elm$json$Json$Decode$succeed(author$project$Astronaut$Astronaut)))))));
+var author$project$Astronaut$decoder = elm$json$Json$Decode$list(author$project$Astronaut$astronaut);
 var elm$json$Json$Encode$string = _Json_wrap;
-var author$project$Main$parseCSV = _Platform_outgoingPort('parseCSV', elm$json$Json$Encode$string);
-var elm$core$Debug$log = _Debug_log;
+var author$project$Astronaut$parseCSV = _Platform_outgoingPort('parseCSV', elm$json$Json$Encode$string);
+var author$project$Main$FileLoaded = function (a) {
+	return {$: 'FileLoaded', a: a};
+};
+var author$project$Main$FileSelected = function (a) {
+	return {$: 'FileSelected', a: a};
+};
 var elm$core$List$map = F2(
 	function (f, xs) {
 		return A3(
@@ -6676,15 +6925,6 @@ var elm$core$List$map = F2(
 			_List_Nil,
 			xs);
 	});
-var elm$core$Platform$Cmd$none = elm$core$Platform$Cmd$batch(_List_Nil);
-var elm$core$Result$toMaybe = function (result) {
-	if (result.$ === 'Ok') {
-		var v = result.a;
-		return elm$core$Maybe$Just(v);
-	} else {
-		return elm$core$Maybe$Nothing;
-	}
-};
 var elm$core$Set$Set_elm_builtin = function (a) {
 	return {$: 'Set_elm_builtin', a: a};
 };
@@ -6698,6 +6938,91 @@ var elm$core$Set$insert = F2(
 var elm$core$Set$fromList = function (list) {
 	return A3(elm$core$List$foldl, elm$core$Set$insert, elm$core$Set$empty, list);
 };
+var author$project$Tax$cities = function (data) {
+	return elm$core$Set$toList(
+		elm$core$Set$fromList(
+			A2(
+				elm$core$List$map,
+				function ($) {
+					return $.city;
+				},
+				data)));
+};
+var elm$core$Platform$Cmd$none = elm$core$Platform$Cmd$batch(_List_Nil);
+var elm$core$Result$toMaybe = function (result) {
+	if (result.$ === 'Ok') {
+		var v = result.a;
+		return elm$core$Maybe$Just(v);
+	} else {
+		return elm$core$Maybe$Nothing;
+	}
+};
+var elm$core$Task$Perform = function (a) {
+	return {$: 'Perform', a: a};
+};
+var elm$core$Task$init = elm$core$Task$succeed(_Utils_Tuple0);
+var elm$core$Task$map = F2(
+	function (func, taskA) {
+		return A2(
+			elm$core$Task$andThen,
+			function (a) {
+				return elm$core$Task$succeed(
+					func(a));
+			},
+			taskA);
+	});
+var elm$core$Task$spawnCmd = F2(
+	function (router, _n0) {
+		var task = _n0.a;
+		return _Scheduler_spawn(
+			A2(
+				elm$core$Task$andThen,
+				elm$core$Platform$sendToApp(router),
+				task));
+	});
+var elm$core$Task$onEffects = F3(
+	function (router, commands, state) {
+		return A2(
+			elm$core$Task$map,
+			function (_n0) {
+				return _Utils_Tuple0;
+			},
+			elm$core$Task$sequence(
+				A2(
+					elm$core$List$map,
+					elm$core$Task$spawnCmd(router),
+					commands)));
+	});
+var elm$core$Task$onSelfMsg = F3(
+	function (_n0, _n1, _n2) {
+		return elm$core$Task$succeed(_Utils_Tuple0);
+	});
+var elm$core$Task$cmdMap = F2(
+	function (tagger, _n0) {
+		var task = _n0.a;
+		return elm$core$Task$Perform(
+			A2(elm$core$Task$map, tagger, task));
+	});
+_Platform_effectManagers['Task'] = _Platform_createManager(elm$core$Task$init, elm$core$Task$onEffects, elm$core$Task$onSelfMsg, elm$core$Task$cmdMap);
+var elm$core$Task$command = _Platform_leaf('Task');
+var elm$core$Task$perform = F2(
+	function (toMessage, task) {
+		return elm$core$Task$command(
+			elm$core$Task$Perform(
+				A2(elm$core$Task$map, toMessage, task)));
+	});
+var elm$time$Time$Posix = function (a) {
+	return {$: 'Posix', a: a};
+};
+var elm$time$Time$millisToPosix = elm$time$Time$Posix;
+var elm$file$File$toString = _File_toString;
+var elm$file$File$Select$file = F2(
+	function (mimes, toMsg) {
+		return A2(
+			elm$core$Task$perform,
+			toMsg,
+			_File_uploadOne(mimes));
+	});
 var krisajenkins$remotedata$RemoteData$Failure = function (a) {
 	return {$: 'Failure', a: a};
 };
@@ -6710,19 +7035,11 @@ var author$project$Main$update = F2(
 			case 'GotData':
 				if (msg.a.$ === 'Ok') {
 					var data = msg.a.a;
-					var cities = elm$core$Set$toList(
-						elm$core$Set$fromList(
-							A2(
-								elm$core$List$map,
-								function ($) {
-									return $.city;
-								},
-								data)));
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{
-								cities: cities,
+								cities: author$project$Tax$cities(data),
 								taxes: krisajenkins$remotedata$RemoteData$Success(data)
 							}),
 						elm$core$Platform$Cmd$none);
@@ -6750,14 +7067,13 @@ var author$project$Main$update = F2(
 					var data = msg.a.a;
 					return _Utils_Tuple2(
 						model,
-						author$project$Main$parseCSV(data));
+						author$project$Astronaut$parseCSV(data));
 				} else {
 					return _Utils_Tuple2(model, elm$core$Platform$Cmd$none);
 				}
-			default:
+			case 'Parsed':
 				var value = msg.a;
-				var parsed = A2(elm$json$Json$Decode$decodeValue, author$project$Main$astronautsDecoder, value);
-				var _n1 = A2(elm$core$Debug$log, 'decoder', parsed);
+				var parsed = A2(elm$json$Json$Decode$decodeValue, author$project$Astronaut$decoder, value);
 				return _Utils_Tuple2(
 					_Utils_update(
 						model,
@@ -6765,14 +7081,53 @@ var author$project$Main$update = F2(
 							csvValue: elm$core$Result$toMaybe(parsed)
 						}),
 					elm$core$Platform$Cmd$none);
+			case 'SelectFile':
+				return _Utils_Tuple2(
+					model,
+					A2(
+						elm$file$File$Select$file,
+						_List_fromArray(
+							['text/csv']),
+						author$project$Main$FileSelected));
+			case 'FileSelected':
+				var file = msg.a;
+				return _Utils_Tuple2(
+					_Utils_update(
+						model,
+						{
+							file: elm$core$Maybe$Just(file)
+						}),
+					A2(
+						elm$core$Task$perform,
+						author$project$Main$FileLoaded,
+						elm$file$File$toString(file)));
+			default:
+				return _Utils_Tuple2(model, elm$core$Platform$Cmd$none);
 		}
 	});
-var author$project$Main$SelectCity = function (a) {
-	return {$: 'SelectCity', a: a};
+var elm$core$List$filter = F2(
+	function (isGood, list) {
+		return A3(
+			elm$core$List$foldr,
+			F2(
+				function (x, xs) {
+					return isGood(x) ? A2(elm$core$List$cons, x, xs) : xs;
+				}),
+			_List_Nil,
+			list);
+	});
+var elm$core$List$singleton = function (value) {
+	return _List_fromArray(
+		[value]);
 };
-var elm$virtual_dom$VirtualDom$Normal = function (a) {
-	return {$: 'Normal', a: a};
-};
+var elm$core$Basics$always = F2(
+	function (a, _n0) {
+		return a;
+	});
+var terezka$elm_charts$Plot$Bar = F2(
+	function (label, height) {
+		return {height: height, label: label};
+	});
 var elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 	switch (handler.$) {
 		case 'Normal':
@@ -6785,201 +7140,16 @@ var elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 			return 3;
 	}
 };
-var elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
-var elm$html$Html$Events$on = F2(
-	function (event, decoder) {
-		return A2(
-			elm$virtual_dom$VirtualDom$on,
-			event,
-			elm$virtual_dom$VirtualDom$Normal(decoder));
-	});
-var author$project$Main$onChange = function (handler) {
-	return A2(
-		elm$html$Html$Events$on,
-		'change',
-		A2(
-			elm$json$Json$Decode$map,
-			handler,
-			A2(
-				elm$json$Json$Decode$at,
-				_List_fromArray(
-					['target', 'value']),
-				elm$json$Json$Decode$string)));
-};
-var elm$core$List$filter = F2(
-	function (isGood, list) {
-		return A3(
-			elm$core$List$foldr,
-			F2(
-				function (x, xs) {
-					return isGood(x) ? A2(elm$core$List$cons, x, xs) : xs;
-				}),
-			_List_Nil,
-			list);
-	});
-var elm$core$String$contains = _String_contains;
-var author$project$Main$toFiltered = F2(
-	function (mselectedCity, taxes) {
-		if (mselectedCity.$ === 'Just') {
-			var selectedCity = mselectedCity.a;
-			var filtered = A2(
-				elm$core$List$filter,
-				function (_n5) {
-					var city = _n5.city;
-					return _Utils_eq(city, selectedCity);
-				},
-				taxes);
-			return {
-				fnb: A2(
-					elm$core$List$filter,
-					function (_n1) {
-						var kind = _n1.kind;
-						return A2(elm$core$String$contains, 'FNB', kind);
-					},
-					filtered),
-				tfb: A2(
-					elm$core$List$filter,
-					function (_n2) {
-						var kind = _n2.kind;
-						return A2(elm$core$String$contains, 'TFB', kind);
-					},
-					filtered),
-				th: A2(
-					elm$core$List$filter,
-					function (_n3) {
-						var kind = _n3.kind;
-						return A2(elm$core$String$contains, 'TH', kind);
-					},
-					filtered),
-				toem: A2(
-					elm$core$List$filter,
-					function (_n4) {
-						var kind = _n4.kind;
-						return A2(elm$core$String$contains, 'TOEM', kind);
-					},
-					filtered)
-			};
-		} else {
-			return {fnb: _List_Nil, tfb: _List_Nil, th: _List_Nil, toem: _List_Nil};
-		}
-	});
-var elm$html$Html$div = _VirtualDom_node('div');
 var elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
-var elm$html$Html$text = elm$virtual_dom$VirtualDom$text;
-var elm$core$List$map4 = _List_map4;
-var terezka$line_charts$Internal$Line$Series = function (a) {
-	return {$: 'Series', a: a};
-};
-var terezka$line_charts$Internal$Line$SeriesConfig = F5(
-	function (color, shape, dashing, label, data) {
-		return {color: color, dashing: dashing, data: data, label: label, shape: shape};
-	});
-var terezka$line_charts$Internal$Line$line = F4(
-	function (color_, shape_, label_, data_) {
-		return terezka$line_charts$Internal$Line$Series(
-			A5(terezka$line_charts$Internal$Line$SeriesConfig, color_, shape_, _List_Nil, label_, data_));
-	});
-var avh4$elm_color$Color$RgbaSpace = F4(
-	function (a, b, c, d) {
-		return {$: 'RgbaSpace', a: a, b: b, c: c, d: d};
-	});
-var avh4$elm_color$Color$scaleFrom255 = function (c) {
-	return c / 255;
-};
-var avh4$elm_color$Color$rgb255 = F3(
-	function (r, g, b) {
-		return A4(
-			avh4$elm_color$Color$RgbaSpace,
-			avh4$elm_color$Color$scaleFrom255(r),
-			avh4$elm_color$Color$scaleFrom255(g),
-			avh4$elm_color$Color$scaleFrom255(b),
-			1.0);
-	});
-var terezka$line_charts$LineChart$Colors$blue = A3(avh4$elm_color$Color$rgb255, 3, 169, 244);
-var terezka$line_charts$LineChart$Colors$gold = A3(avh4$elm_color$Color$rgb255, 205, 145, 60);
-var terezka$line_charts$LineChart$Colors$pink = A3(avh4$elm_color$Color$rgb255, 245, 105, 215);
-var terezka$line_charts$LineChart$defaultColors = _List_fromArray(
-	[terezka$line_charts$LineChart$Colors$pink, terezka$line_charts$LineChart$Colors$blue, terezka$line_charts$LineChart$Colors$gold]);
-var terezka$line_charts$LineChart$defaultLabel = _List_fromArray(
-	['First', 'Second', 'Third']);
-var terezka$line_charts$Internal$Dots$Circle = {$: 'Circle'};
-var terezka$line_charts$Internal$Dots$Cross = {$: 'Cross'};
-var terezka$line_charts$Internal$Dots$Triangle = {$: 'Triangle'};
-var terezka$line_charts$LineChart$defaultShapes = _List_fromArray(
-	[terezka$line_charts$Internal$Dots$Circle, terezka$line_charts$Internal$Dots$Triangle, terezka$line_charts$Internal$Dots$Cross]);
-var terezka$line_charts$LineChart$defaultLines = A4(elm$core$List$map4, terezka$line_charts$Internal$Line$line, terezka$line_charts$LineChart$defaultColors, terezka$line_charts$LineChart$defaultShapes, terezka$line_charts$LineChart$defaultLabel);
-var terezka$line_charts$Internal$Area$None = {$: 'None'};
-var terezka$line_charts$Internal$Area$none = terezka$line_charts$Internal$Area$None;
-var terezka$line_charts$LineChart$Area$default = terezka$line_charts$Internal$Area$none;
-var elm$core$Basics$composeL = F3(
-	function (g, f, x) {
-		return g(
-			f(x));
-	});
-var elm$core$Basics$round = _Basics_round;
-var terezka$line_charts$Internal$Axis$Config = function (a) {
-	return {$: 'Config', a: a};
-};
-var terezka$line_charts$Internal$Axis$custom = terezka$line_charts$Internal$Axis$Config;
-var terezka$line_charts$Internal$Axis$Line$Config = function (a) {
-	return {$: 'Config', a: a};
-};
-var terezka$line_charts$Internal$Axis$Line$custom = terezka$line_charts$Internal$Axis$Line$Config;
-var elm$core$Basics$min = F2(
-	function (x, y) {
-		return (_Utils_cmp(x, y) < 0) ? x : y;
-	});
-var terezka$line_charts$Internal$Coordinate$smallestRange = F2(
-	function (data, range_) {
-		return {
-			max: A2(elm$core$Basics$min, data.max, range_.max),
-			min: A2(elm$core$Basics$max, data.min, range_.min)
-		};
-	});
-var terezka$line_charts$Internal$Axis$Line$rangeFrame = function (color) {
-	return terezka$line_charts$Internal$Axis$Line$custom(
-		F2(
-			function (data, range) {
-				var smallest = A2(terezka$line_charts$Internal$Coordinate$smallestRange, data, range);
-				return {color: color, end: smallest.max, events: _List_Nil, start: smallest.min, width: 1};
-			}));
-};
-var terezka$line_charts$Internal$Axis$Range$Padded = F2(
-	function (a, b) {
-		return {$: 'Padded', a: a, b: b};
-	});
-var terezka$line_charts$Internal$Axis$Range$padded = terezka$line_charts$Internal$Axis$Range$Padded;
-var terezka$line_charts$Internal$Axis$Ticks$Config = function (a) {
-	return {$: 'Config', a: a};
-};
-var terezka$line_charts$Internal$Axis$Ticks$custom = terezka$line_charts$Internal$Axis$Ticks$Config;
-var terezka$line_charts$Internal$Axis$Title$Config = function (a) {
-	return {$: 'Config', a: a};
-};
-var terezka$line_charts$Internal$Axis$Title$custom = F4(
-	function (position, x, y, title) {
-		return terezka$line_charts$Internal$Axis$Title$Config(
-			{
-				offset: _Utils_Tuple2(x, y),
-				position: position,
-				view: title
-			});
-	});
 var elm$svg$Svg$text = elm$virtual_dom$VirtualDom$text;
 var elm$svg$Svg$trustedNode = _VirtualDom_nodeNS('http://www.w3.org/2000/svg');
 var elm$svg$Svg$text_ = elm$svg$Svg$trustedNode('text');
 var elm$svg$Svg$tspan = elm$svg$Svg$trustedNode('tspan');
-var elm$svg$Svg$Attributes$fill = _VirtualDom_attribute('fill');
-var elm$svg$Svg$Attributes$style = _VirtualDom_attribute('style');
-var terezka$line_charts$Internal$Svg$label = F2(
-	function (color, string) {
+var terezka$elm_charts$Plot$viewLabel = F2(
+	function (attributes, string) {
 		return A2(
 			elm$svg$Svg$text_,
-			_List_fromArray(
-				[
-					elm$svg$Svg$Attributes$fill(color),
-					elm$svg$Svg$Attributes$style('pointer-events: none;')
-				]),
+			attributes,
 			_List_fromArray(
 				[
 					A2(
@@ -6991,36 +7161,62 @@ var terezka$line_charts$Internal$Svg$label = F2(
 						]))
 				]));
 	});
-var terezka$line_charts$Internal$Axis$Title$atPosition = F3(
-	function (position, x, y) {
-		return A2(
-			elm$core$Basics$composeL,
-			A3(terezka$line_charts$Internal$Axis$Title$custom, position, x, y),
-			terezka$line_charts$Internal$Svg$label('inherit'));
+var terezka$elm_charts$Plot$normalBarLabel = F2(
+	function (label, position) {
+		return {
+			position: position,
+			view: A2(terezka$elm_charts$Plot$viewLabel, _List_Nil, label)
+		};
 	});
-var terezka$line_charts$Internal$Axis$Title$atDataMax = function () {
-	var position = F2(
-		function (data, range) {
-			return A2(elm$core$Basics$min, data.max, range.max);
-		});
-	return terezka$line_charts$Internal$Axis$Title$atPosition(position);
-}();
-var terezka$line_charts$Internal$Axis$Values$Around = function (a) {
-	return {$: 'Around', a: a};
+var terezka$elm_charts$Plot$group = F2(
+	function (label, heights) {
+		return {
+			bars: A2(
+				elm$core$List$map,
+				terezka$elm_charts$Plot$Bar(elm$core$Maybe$Nothing),
+				heights),
+			hint: elm$core$Basics$always(elm$core$Maybe$Nothing),
+			label: terezka$elm_charts$Plot$normalBarLabel(label),
+			verticalLine: elm$core$Basics$always(elm$core$Maybe$Nothing)
+		};
+	});
+var elm$svg$Svg$Attributes$fill = _VirtualDom_attribute('fill');
+var terezka$elm_charts$Internal$Colors$blueFill = '#e4eeff';
+var terezka$elm_charts$Internal$Colors$pinkFill = 'rgba(253, 185, 231, 0.5)';
+var terezka$elm_charts$Plot$Percentage = function (a) {
+	return {$: 'Percentage', a: a};
 };
-var terezka$line_charts$Internal$Axis$Values$around = terezka$line_charts$Internal$Axis$Values$Around;
-var terezka$line_charts$Internal$Axis$Values$ceilingTo = F2(
-	function (prec, number) {
-		return prec * elm$core$Basics$ceiling(number / prec);
+var elm$core$Basics$clamp = F3(
+	function (low, high, number) {
+		return (_Utils_cmp(number, low) < 0) ? low : ((_Utils_cmp(number, high) > 0) ? high : number);
 	});
-var terezka$line_charts$Internal$Axis$Values$getBeginning = F2(
-	function (min, interval) {
-		var multiple = min / interval;
-		return _Utils_eq(
-			multiple,
-			elm$core$Basics$round(multiple)) ? min : A2(terezka$line_charts$Internal$Axis$Values$ceilingTo, interval, min);
+var terezka$elm_charts$Plot$closestToZero = F2(
+	function (min, max) {
+		return A3(elm$core$Basics$clamp, min, max, 0);
 	});
-var elm$core$Basics$ge = _Utils_ge;
+var terezka$elm_charts$Plot$Axis = function (a) {
+	return {$: 'Axis', a: a};
+};
+var terezka$elm_charts$Plot$customAxis = terezka$elm_charts$Plot$Axis;
+var elm$core$Basics$negate = function (n) {
+	return -n;
+};
+var elm$core$Basics$abs = function (n) {
+	return (n < 0) ? (-n) : n;
+};
+var terezka$elm_charts$Plot$count = F4(
+	function (delta, lowest, range, firstValue_) {
+		return elm$core$Basics$floor(
+			(range - (elm$core$Basics$abs(lowest) - elm$core$Basics$abs(firstValue_))) / delta);
+	});
+var terezka$elm_charts$Plot$ceilToNearest = F2(
+	function (precision, value) {
+		return elm$core$Basics$ceiling(value / precision) * precision;
+	});
+var terezka$elm_charts$Plot$firstValue = F2(
+	function (delta, lowest) {
+		return A2(terezka$elm_charts$Plot$ceilToNearest, delta, lowest);
+	});
 var elm$core$Maybe$withDefault = F2(
 	function (_default, maybe) {
 		if (maybe.$ === 'Just') {
@@ -7030,13 +7226,8 @@ var elm$core$Maybe$withDefault = F2(
 			return _default;
 		}
 	});
+var elm$core$Basics$ge = _Utils_ge;
 var elm$core$Basics$not = _Basics_not;
-var elm$core$Basics$negate = function (n) {
-	return -n;
-};
-var elm$core$Basics$abs = function (n) {
-	return (n < 0) ? (-n) : n;
-};
 var elm$core$Basics$isInfinite = _Basics_isInfinite;
 var elm$core$Basics$isNaN = _Basics_isNaN;
 var elm$core$Maybe$map = F2(
@@ -7316,6 +7507,1666 @@ var myrho$elm_round$Round$round = myrho$elm_round$Round$roundFun(
 				}
 			}
 		}));
+var elm$core$Basics$min = F2(
+	function (x, y) {
+		return (_Utils_cmp(x, y) < 0) ? x : y;
+	});
+var elm$core$List$head = function (list) {
+	if (list.b) {
+		var x = list.a;
+		var xs = list.b;
+		return elm$core$Maybe$Just(x);
+	} else {
+		return elm$core$Maybe$Nothing;
+	}
+};
+var elm$regex$Regex$Match = F4(
+	function (match, index, number, submatches) {
+		return {index: index, match: match, number: number, submatches: submatches};
+	});
+var elm$regex$Regex$findAtMost = _Regex_findAtMost;
+var elm$regex$Regex$fromStringWith = _Regex_fromStringWith;
+var elm$regex$Regex$fromString = function (string) {
+	return A2(
+		elm$regex$Regex$fromStringWith,
+		{caseInsensitive: false, multiline: false},
+		string);
+};
+var elm$regex$Regex$never = _Regex_never;
+var terezka$elm_charts$Plot$deltaPrecision = function (delta) {
+	var regex = A2(
+		elm$core$Maybe$withDefault,
+		elm$regex$Regex$never,
+		elm$regex$Regex$fromString('\\.[0-9]*'));
+	return elm$core$Basics$abs(
+		A2(
+			elm$core$Basics$min,
+			0,
+			1 - elm$core$String$length(
+				A2(
+					elm$core$Maybe$withDefault,
+					'',
+					elm$core$List$head(
+						A2(
+							elm$core$List$map,
+							function ($) {
+								return $.match;
+							},
+							A3(
+								elm$regex$Regex$findAtMost,
+								1,
+								regex,
+								elm$core$String$fromFloat(delta))))))));
+};
+var terezka$elm_charts$Plot$tickPosition = F3(
+	function (delta, firstValue_, index) {
+		return A2(
+			elm$core$Maybe$withDefault,
+			0,
+			elm$core$String$toFloat(
+				A2(
+					myrho$elm_round$Round$round,
+					terezka$elm_charts$Plot$deltaPrecision(delta),
+					firstValue_ + (index * delta))));
+	});
+var terezka$elm_charts$Plot$interval = F3(
+	function (offset, delta, _n0) {
+		var min = _n0.min;
+		var max = _n0.max;
+		var value = A2(terezka$elm_charts$Plot$firstValue, delta, min) + offset;
+		var range = elm$core$Basics$abs(min - max);
+		var indexes = A2(
+			elm$core$List$range,
+			0,
+			A4(terezka$elm_charts$Plot$count, delta, min, range, value));
+		return A2(
+			elm$core$List$map,
+			A2(terezka$elm_charts$Plot$tickPosition, delta, value),
+			indexes);
+	});
+var elm$core$Basics$pow = _Basics_pow;
+var elm$core$Basics$round = _Basics_round;
+var terezka$elm_charts$Plot$niceInterval = F3(
+	function (min, max, total) {
+		var range = elm$core$Basics$abs(max - min);
+		var delta0 = range / total;
+		var mag = elm$core$Basics$floor(
+			A2(elm$core$Basics$logBase, 10, delta0));
+		var magPow = A2(elm$core$Basics$pow, 10, mag);
+		var magMsd = elm$core$Basics$round(delta0 / magPow);
+		var magMsdFinal = (magMsd > 5) ? 10 : ((magMsd > 2) ? 5 : ((magMsd > 1) ? 1 : magMsd));
+		return magMsdFinal * magPow;
+	});
+var terezka$elm_charts$Plot$decentPositions = function (summary) {
+	return (summary.length > 600) ? A3(
+		terezka$elm_charts$Plot$interval,
+		0,
+		A3(terezka$elm_charts$Plot$niceInterval, summary.min, summary.max, 10),
+		summary) : A3(
+		terezka$elm_charts$Plot$interval,
+		0,
+		A3(terezka$elm_charts$Plot$niceInterval, summary.min, summary.max, 5),
+		summary);
+};
+var terezka$elm_charts$Plot$remove = F2(
+	function (banned, values) {
+		return A2(
+			elm$core$List$filter,
+			function (v) {
+				return !_Utils_eq(v, banned);
+			},
+			values);
+	});
+var terezka$elm_charts$Plot$simpleLabel = function (position) {
+	return {
+		position: position,
+		view: A2(
+			terezka$elm_charts$Plot$viewLabel,
+			_List_Nil,
+			elm$core$String$fromFloat(position))
+	};
+};
+var elm$svg$Svg$Attributes$stroke = _VirtualDom_attribute('stroke');
+var terezka$elm_charts$Internal$Colors$darkGrey = '#a3a3a3';
+var elm$svg$Svg$Attributes$style = _VirtualDom_attribute('style');
+var terezka$elm_charts$Plot$fullLine = F2(
+	function (attributes, summary) {
+		return {
+			attributes: A2(
+				elm$core$List$cons,
+				elm$svg$Svg$Attributes$style('pointer-events: none;'),
+				attributes),
+			end: summary.max,
+			start: summary.min
+		};
+	});
+var terezka$elm_charts$Plot$simpleLine = function (summary) {
+	return A2(
+		terezka$elm_charts$Plot$fullLine,
+		_List_fromArray(
+			[
+				elm$svg$Svg$Attributes$stroke(terezka$elm_charts$Internal$Colors$darkGrey)
+			]),
+		summary);
+};
+var terezka$elm_charts$Plot$simpleTick = function (position) {
+	return {
+		attributes: _List_fromArray(
+			[
+				elm$svg$Svg$Attributes$stroke(terezka$elm_charts$Internal$Colors$darkGrey)
+			]),
+		length: 5,
+		position: position
+	};
+};
+var terezka$elm_charts$Plot$normalAxis = terezka$elm_charts$Plot$customAxis(
+	function (summary) {
+		return {
+			axisLine: elm$core$Maybe$Just(
+				terezka$elm_charts$Plot$simpleLine(summary)),
+			flipAnchor: false,
+			labels: A2(
+				elm$core$List$map,
+				terezka$elm_charts$Plot$simpleLabel,
+				A2(
+					terezka$elm_charts$Plot$remove,
+					0,
+					terezka$elm_charts$Plot$decentPositions(summary))),
+			position: terezka$elm_charts$Plot$closestToZero,
+			ticks: A2(
+				elm$core$List$map,
+				terezka$elm_charts$Plot$simpleTick,
+				A2(
+					terezka$elm_charts$Plot$remove,
+					0,
+					terezka$elm_charts$Plot$decentPositions(summary)))
+		};
+	});
+var terezka$elm_charts$Plot$groups = function (toGroups) {
+	return {
+		axis: terezka$elm_charts$Plot$normalAxis,
+		maxWidth: terezka$elm_charts$Plot$Percentage(75),
+		styles: _List_fromArray(
+			[
+				_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$fill(terezka$elm_charts$Internal$Colors$pinkFill)
+				]),
+				_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$fill(terezka$elm_charts$Internal$Colors$blueFill)
+				])
+			]),
+		toGroups: toGroups
+	};
+};
+var terezka$elm_charts$Plot$YeahGridsAreTotallyLame = {$: 'YeahGridsAreTotallyLame'};
+var terezka$elm_charts$Plot$clearGrid = terezka$elm_charts$Plot$YeahGridsAreTotallyLame;
+var elm$html$Html$div = _VirtualDom_node('div');
+var elm$virtual_dom$VirtualDom$style = _VirtualDom_style;
+var elm$html$Html$Attributes$style = elm$virtual_dom$VirtualDom$style;
+var terezka$elm_charts$Plot$normalHintContainer = function (summary) {
+	return elm$html$Html$div(
+		_List_fromArray(
+			[
+				A2(
+				elm$html$Html$Attributes$style,
+				'margin-left',
+				elm$core$String$fromFloat(summary.x.marginLower) + 'px')
+			]));
+};
+var terezka$elm_charts$Plot$defaultSeriesPlotCustomizations = {
+	attributes: _List_Nil,
+	defs: _List_Nil,
+	grid: {horizontal: terezka$elm_charts$Plot$clearGrid, vertical: terezka$elm_charts$Plot$clearGrid},
+	height: 440,
+	hintContainer: terezka$elm_charts$Plot$normalHintContainer,
+	horizontalAxis: terezka$elm_charts$Plot$normalAxis,
+	id: 'elm-plot',
+	junk: elm$core$Basics$always(_List_Nil),
+	margin: {bottom: 20, left: 40, right: 40, top: 20},
+	onHover: elm$core$Maybe$Nothing,
+	toDomainHighest: elm$core$Basics$identity,
+	toDomainLowest: elm$core$Basics$identity,
+	toRangeHighest: elm$core$Basics$identity,
+	toRangeLowest: elm$core$Basics$identity,
+	width: 647
+};
+var terezka$elm_charts$Plot$normalBarsAxis = terezka$elm_charts$Plot$customAxis(
+	function (summary) {
+		return {
+			axisLine: elm$core$Maybe$Just(
+				terezka$elm_charts$Plot$simpleLine(summary)),
+			flipAnchor: false,
+			labels: _List_Nil,
+			position: terezka$elm_charts$Plot$closestToZero,
+			ticks: A2(
+				elm$core$List$map,
+				terezka$elm_charts$Plot$simpleTick,
+				A3(terezka$elm_charts$Plot$interval, 0, 1, summary))
+		};
+	});
+var terezka$elm_charts$Plot$defaultBarsPlotCustomizations = _Utils_update(
+	terezka$elm_charts$Plot$defaultSeriesPlotCustomizations,
+	{
+		horizontalAxis: terezka$elm_charts$Plot$normalBarsAxis,
+		margin: {bottom: 40, left: 40, right: 40, top: 20}
+	});
+var elm$core$Basics$never = function (_n0) {
+	never:
+	while (true) {
+		var nvr = _n0.a;
+		var $temp$_n0 = nvr;
+		_n0 = $temp$_n0;
+		continue never;
+	}
+};
+var elm$core$List$append = F2(
+	function (xs, ys) {
+		if (!ys.b) {
+			return xs;
+		} else {
+			return A3(elm$core$List$foldr, elm$core$List$cons, ys, xs);
+		}
+	});
+var elm$core$List$concat = function (lists) {
+	return A3(elm$core$List$foldr, elm$core$List$append, _List_Nil, lists);
+};
+var elm$core$List$concatMap = F2(
+	function (f, list) {
+		return elm$core$List$concat(
+			A2(elm$core$List$map, f, list));
+	});
+var elm$virtual_dom$VirtualDom$map = _VirtualDom_map;
+var elm$html$Html$map = elm$virtual_dom$VirtualDom$map;
+var elm$svg$Svg$g = elm$svg$Svg$trustedNode('g');
+var elm$svg$Svg$map = elm$virtual_dom$VirtualDom$map;
+var elm$svg$Svg$svg = elm$svg$Svg$trustedNode('svg');
+var elm$svg$Svg$Attributes$class = _VirtualDom_attribute('class');
+var terezka$elm_charts$Plot$addNiceReachForBars = function (summary) {
+	var x = summary.x;
+	var y = summary.y;
+	return _Utils_update(
+		summary,
+		{
+			x: _Utils_update(
+				x,
+				{max: x.max + 0.5, min: x.min - 0.5}),
+			y: _Utils_update(
+				y,
+				{
+					max: y.max,
+					min: A2(elm$core$Basics$min, y.min, 0)
+				})
+		});
+};
+var elm$virtual_dom$VirtualDom$Normal = function (a) {
+	return {$: 'Normal', a: a};
+};
+var elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
+var elm$html$Html$Events$on = F2(
+	function (event, decoder) {
+		return A2(
+			elm$virtual_dom$VirtualDom$on,
+			event,
+			elm$virtual_dom$VirtualDom$Normal(decoder));
+	});
+var elm$html$Html$Events$onMouseLeave = function (msg) {
+	return A2(
+		elm$html$Html$Events$on,
+		'mouseleave',
+		elm$json$Json$Decode$succeed(msg));
+};
+var elm$svg$Svg$Attributes$id = _VirtualDom_attribute('id');
+var debois$elm_dom$DOM$target = function (decoder) {
+	return A2(elm$json$Json$Decode$field, 'target', decoder);
+};
+var elm$json$Json$Decode$map3 = _Json_map3;
+var debois$elm_dom$DOM$offsetHeight = A2(elm$json$Json$Decode$field, 'offsetHeight', elm$json$Json$Decode$float);
+var debois$elm_dom$DOM$offsetWidth = A2(elm$json$Json$Decode$field, 'offsetWidth', elm$json$Json$Decode$float);
+var debois$elm_dom$DOM$offsetLeft = A2(elm$json$Json$Decode$field, 'offsetLeft', elm$json$Json$Decode$float);
+var debois$elm_dom$DOM$offsetParent = F2(
+	function (x, decoder) {
+		return elm$json$Json$Decode$oneOf(
+			_List_fromArray(
+				[
+					A2(
+					elm$json$Json$Decode$field,
+					'offsetParent',
+					elm$json$Json$Decode$null(x)),
+					A2(elm$json$Json$Decode$field, 'offsetParent', decoder)
+				]));
+	});
+var debois$elm_dom$DOM$offsetTop = A2(elm$json$Json$Decode$field, 'offsetTop', elm$json$Json$Decode$float);
+var debois$elm_dom$DOM$scrollLeft = A2(elm$json$Json$Decode$field, 'scrollLeft', elm$json$Json$Decode$float);
+var debois$elm_dom$DOM$scrollTop = A2(elm$json$Json$Decode$field, 'scrollTop', elm$json$Json$Decode$float);
+var elm$json$Json$Decode$map4 = _Json_map4;
+var debois$elm_dom$DOM$position = F2(
+	function (x, y) {
+		return A2(
+			elm$json$Json$Decode$andThen,
+			function (_n0) {
+				var x_ = _n0.a;
+				var y_ = _n0.b;
+				return A2(
+					debois$elm_dom$DOM$offsetParent,
+					_Utils_Tuple2(x_, y_),
+					A2(debois$elm_dom$DOM$position, x_, y_));
+			},
+			A5(
+				elm$json$Json$Decode$map4,
+				F4(
+					function (scrollLeftP, scrollTopP, offsetLeftP, offsetTopP) {
+						return _Utils_Tuple2((x + offsetLeftP) - scrollLeftP, (y + offsetTopP) - scrollTopP);
+					}),
+				debois$elm_dom$DOM$scrollLeft,
+				debois$elm_dom$DOM$scrollTop,
+				debois$elm_dom$DOM$offsetLeft,
+				debois$elm_dom$DOM$offsetTop));
+	});
+var debois$elm_dom$DOM$boundingClientRect = A4(
+	elm$json$Json$Decode$map3,
+	F3(
+		function (_n0, width, height) {
+			var x = _n0.a;
+			var y = _n0.b;
+			return {height: height, left: x, top: y, width: width};
+		}),
+	A2(debois$elm_dom$DOM$position, 0, 0),
+	debois$elm_dom$DOM$offsetWidth,
+	debois$elm_dom$DOM$offsetHeight);
+var debois$elm_dom$DOM$parentElement = function (decoder) {
+	return A2(elm$json$Json$Decode$field, 'parentElement', decoder);
+};
+var elm$json$Json$Decode$lazy = function (thunk) {
+	return A2(
+		elm$json$Json$Decode$andThen,
+		thunk,
+		elm$json$Json$Decode$succeed(_Utils_Tuple0));
+};
+function terezka$elm_charts$Plot$cyclic$plotPosition() {
+	return elm$json$Json$Decode$oneOf(
+		_List_fromArray(
+			[
+				debois$elm_dom$DOM$boundingClientRect,
+				elm$json$Json$Decode$lazy(
+				function (_n0) {
+					return debois$elm_dom$DOM$parentElement(
+						terezka$elm_charts$Plot$cyclic$plotPosition());
+				})
+			]));
+}
+try {
+	var terezka$elm_charts$Plot$plotPosition = terezka$elm_charts$Plot$cyclic$plotPosition();
+	terezka$elm_charts$Plot$cyclic$plotPosition = function () {
+		return terezka$elm_charts$Plot$plotPosition;
+	};
+} catch ($) {
+throw 'Some top-level definitions from `Plot` are causing infinite recursion:\n\n  ┌─────┐\n  │    plotPosition\n  └─────┘\n\nThese errors are very tricky, so read https://elm-lang.org/0.19.0/halting-problem to learn how to fix it!';}
+var terezka$elm_charts$Internal$Draw$length = function (axis) {
+	return (axis.length - axis.marginLower) - axis.marginUpper;
+};
+var terezka$elm_charts$Internal$Draw$range = function (axis) {
+	return (axis.max - axis.min) ? (axis.max - axis.min) : 1;
+};
+var terezka$elm_charts$Internal$Draw$unScaleValue = F2(
+	function (axis, v) {
+		return (v * terezka$elm_charts$Internal$Draw$range(axis)) / terezka$elm_charts$Internal$Draw$length(axis);
+	});
+var terezka$elm_charts$Internal$Draw$toUnSVGX = F2(
+	function (_n0, value) {
+		var x = _n0.x;
+		return A2(terezka$elm_charts$Internal$Draw$unScaleValue, x, value - x.marginLower) + x.min;
+	});
+var terezka$elm_charts$Internal$Draw$toUnSVGY = F2(
+	function (_n0, value) {
+		var y = _n0.y;
+		return (terezka$elm_charts$Internal$Draw$range(y) - A2(terezka$elm_charts$Internal$Draw$unScaleValue, y, value - y.marginLower)) + y.min;
+	});
+var terezka$elm_charts$Plot$diff = F2(
+	function (a, b) {
+		return elm$core$Basics$abs(a - b);
+	});
+var terezka$elm_charts$Plot$toNearestX = F2(
+	function (summary, exactX) {
+		var updateIfCloser = F2(
+			function (closest, x) {
+				return (_Utils_cmp(
+					A2(terezka$elm_charts$Plot$diff, x, exactX),
+					A2(terezka$elm_charts$Plot$diff, closest, exactX)) > 0) ? closest : x;
+			});
+		var _default = A2(
+			elm$core$Maybe$withDefault,
+			0,
+			elm$core$List$head(summary.x.all));
+		return A3(elm$core$List$foldl, updateIfCloser, _default, summary.x.all);
+	});
+var terezka$elm_charts$Plot$unScalePoint = F4(
+	function (summary, mouseX, mouseY, _n0) {
+		var left = _n0.left;
+		var top = _n0.top;
+		var width = _n0.width;
+		var height = _n0.height;
+		return elm$core$Maybe$Just(
+			{
+				x: A2(
+					terezka$elm_charts$Plot$toNearestX,
+					summary,
+					A2(terezka$elm_charts$Internal$Draw$toUnSVGX, summary, (summary.x.length * (mouseX - left)) / width)),
+				y: A3(
+					elm$core$Basics$clamp,
+					summary.y.min,
+					summary.y.max,
+					A2(terezka$elm_charts$Internal$Draw$toUnSVGY, summary, (summary.y.length * (mouseY - top)) / height))
+			});
+	});
+var terezka$elm_charts$Plot$handleHint = F2(
+	function (summary, toMsg) {
+		return A4(
+			elm$json$Json$Decode$map3,
+			F3(
+				function (x, y, r) {
+					return toMsg(
+						A4(terezka$elm_charts$Plot$unScalePoint, summary, x, y, r));
+				}),
+			A2(elm$json$Json$Decode$field, 'clientX', elm$json$Json$Decode$float),
+			A2(elm$json$Json$Decode$field, 'clientY', elm$json$Json$Decode$float),
+			debois$elm_dom$DOM$target(terezka$elm_charts$Plot$plotPosition));
+	});
+var terezka$elm_charts$Plot$containerAttributes = F2(
+	function (customizations, summary) {
+		var _n0 = customizations.onHover;
+		if (_n0.$ === 'Just') {
+			var toMsg = _n0.a;
+			return _List_fromArray(
+				[
+					A2(
+					elm$html$Html$Events$on,
+					'mousemove',
+					A2(terezka$elm_charts$Plot$handleHint, summary, toMsg)),
+					elm$html$Html$Events$onMouseLeave(
+					toMsg(elm$core$Maybe$Nothing)),
+					elm$svg$Svg$Attributes$id(customizations.id),
+					A2(elm$html$Html$Attributes$style, 'position', 'relative'),
+					A2(elm$html$Html$Attributes$style, 'margin', '0 auto')
+				]);
+		} else {
+			return _List_fromArray(
+				[
+					elm$svg$Svg$Attributes$id(customizations.id),
+					A2(elm$html$Html$Attributes$style, 'position', 'relative'),
+					A2(elm$html$Html$Attributes$style, 'margin', '0 auto')
+				]);
+		}
+	});
+var elm$svg$Svg$clipPath = elm$svg$Svg$trustedNode('clipPath');
+var elm$svg$Svg$defs = elm$svg$Svg$trustedNode('defs');
+var elm$svg$Svg$rect = elm$svg$Svg$trustedNode('rect');
+var elm$svg$Svg$Attributes$height = _VirtualDom_attribute('height');
+var elm$svg$Svg$Attributes$width = _VirtualDom_attribute('width');
+var elm$svg$Svg$Attributes$x = _VirtualDom_attribute('x');
+var elm$svg$Svg$Attributes$y = _VirtualDom_attribute('y');
+var terezka$elm_charts$Plot$toClipPathId = function (_n0) {
+	var id = _n0.id;
+	return 'elm-plot__clip-path__' + id;
+};
+var terezka$elm_charts$Plot$defineClipPath = F2(
+	function (customizations, summary) {
+		return A2(
+			elm$svg$Svg$defs,
+			_List_Nil,
+			A2(
+				elm$core$List$cons,
+				A2(
+					elm$svg$Svg$clipPath,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$id(
+							terezka$elm_charts$Plot$toClipPathId(customizations))
+						]),
+					_List_fromArray(
+						[
+							A2(
+							elm$svg$Svg$rect,
+							_List_fromArray(
+								[
+									elm$svg$Svg$Attributes$x(
+									elm$core$String$fromFloat(summary.x.marginLower)),
+									elm$svg$Svg$Attributes$y(
+									elm$core$String$fromFloat(summary.y.marginLower)),
+									elm$svg$Svg$Attributes$width(
+									elm$core$String$fromFloat(
+										terezka$elm_charts$Internal$Draw$length(summary.x))),
+									elm$svg$Svg$Attributes$height(
+									elm$core$String$fromFloat(
+										terezka$elm_charts$Internal$Draw$length(summary.y)))
+								]),
+							_List_Nil)
+						])),
+				customizations.defs));
+	});
+var elm$svg$Svg$Attributes$viewBox = _VirtualDom_attribute('viewBox');
+var terezka$elm_charts$Plot$innerAttributes = function (customizations) {
+	return _Utils_ap(
+		customizations.attributes,
+		_List_fromArray(
+			[
+				elm$svg$Svg$Attributes$viewBox(
+				'0 0 ' + (elm$core$String$fromInt(customizations.width) + (' ' + elm$core$String$fromInt(customizations.height))))
+			]));
+};
+var elm$core$List$sortBy = _List_sortBy;
+var elm$core$List$sort = function (xs) {
+	return A2(elm$core$List$sortBy, elm$core$Basics$identity, xs);
+};
+var terezka$elm_charts$Plot$defaultPlotSummary = {
+	x: {all: _List_Nil, max: 1.0, min: 0.0},
+	y: {all: _List_Nil, max: 1.0, min: 0.0}
+};
+var terezka$elm_charts$Plot$toPlotSummary = F3(
+	function (customizations, toNiceReach, points_) {
+		var foldAxis = F2(
+			function (summary, v) {
+				return {
+					all: A2(elm$core$List$cons, v, summary.all),
+					max: A2(elm$core$Basics$max, summary.max, v),
+					min: A2(elm$core$Basics$min, summary.min, v)
+				};
+			});
+		var foldPlot = F2(
+			function (_n1, result) {
+				var x = _n1.x;
+				var y = _n1.y;
+				if (result.$ === 'Nothing') {
+					return elm$core$Maybe$Just(
+						{
+							x: {
+								all: _List_fromArray(
+									[x]),
+								max: x,
+								min: x
+							},
+							y: {
+								all: _List_fromArray(
+									[y]),
+								max: y,
+								min: y
+							}
+						});
+				} else {
+					var summary = result.a;
+					return elm$core$Maybe$Just(
+						{
+							x: A2(foldAxis, summary.x, x),
+							y: A2(foldAxis, summary.y, y)
+						});
+				}
+			});
+		var plotSummary = toNiceReach(
+			A2(
+				elm$core$Maybe$withDefault,
+				terezka$elm_charts$Plot$defaultPlotSummary,
+				A3(elm$core$List$foldl, foldPlot, elm$core$Maybe$Nothing, points_)));
+		return {
+			x: {
+				all: elm$core$List$sort(plotSummary.x.all),
+				dataMax: plotSummary.x.max,
+				dataMin: plotSummary.x.min,
+				length: customizations.width,
+				marginLower: customizations.margin.left,
+				marginUpper: customizations.margin.right,
+				max: customizations.toRangeHighest(plotSummary.x.max),
+				min: customizations.toRangeLowest(plotSummary.x.min)
+			},
+			y: {
+				all: plotSummary.y.all,
+				dataMax: plotSummary.y.max,
+				dataMin: plotSummary.y.min,
+				length: customizations.height,
+				marginLower: customizations.margin.top,
+				marginUpper: customizations.margin.bottom,
+				max: customizations.toDomainHighest(plotSummary.y.max),
+				min: customizations.toDomainLowest(plotSummary.y.min)
+			}
+		};
+	});
+var elm$core$Tuple$pair = F2(
+	function (a, b) {
+		return _Utils_Tuple2(a, b);
+	});
+var elm$svg$Svg$Attributes$transform = _VirtualDom_attribute('transform');
+var terezka$elm_charts$Internal$Draw$scaleValue = F2(
+	function (axis, value) {
+		return (value * terezka$elm_charts$Internal$Draw$length(axis)) / terezka$elm_charts$Internal$Draw$range(axis);
+	});
+var terezka$elm_charts$Internal$Draw$toSVGX = F2(
+	function (_n0, value) {
+		var x = _n0.x;
+		return A2(terezka$elm_charts$Internal$Draw$scaleValue, x, value - x.min) + x.marginLower;
+	});
+var terezka$elm_charts$Internal$Draw$toSVGY = F2(
+	function (_n0, value) {
+		var y = _n0.y;
+		return A2(terezka$elm_charts$Internal$Draw$scaleValue, y, y.max - value) + y.marginLower;
+	});
+var terezka$elm_charts$Internal$Draw$place = F4(
+	function (plot, _n0, offsetX, offsetY) {
+		var x = _n0.x;
+		var y = _n0.y;
+		return elm$svg$Svg$Attributes$transform(
+			'translate(' + (elm$core$String$fromFloat(
+				A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x) + offsetX) + (',' + (elm$core$String$fromFloat(
+				A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y) + offsetY) + ')'))));
+	});
+var terezka$elm_charts$Plot$viewActualBars = F3(
+	function (summary, _n0, groups_) {
+		var styles = _n0.styles;
+		var maxWidth = _n0.maxWidth;
+		var indexedHeights = function (group_) {
+			return A2(elm$core$List$indexedMap, elm$core$Tuple$pair, group_.bars);
+		};
+		var barsPerGroup = elm$core$List$length(styles);
+		var defaultWidth = 1 / barsPerGroup;
+		var width = function () {
+			if (maxWidth.$ === 'Percentage') {
+				var perc = maxWidth.a;
+				return (defaultWidth * perc) / 100;
+			} else {
+				var max = maxWidth.a;
+				return (_Utils_cmp(
+					defaultWidth,
+					A2(terezka$elm_charts$Internal$Draw$unScaleValue, summary.x, max)) > 0) ? A2(terezka$elm_charts$Internal$Draw$unScaleValue, summary.x, max) : defaultWidth;
+			}
+		}();
+		var viewLabel_ = function (label) {
+			return A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						elm$svg$Svg$Attributes$transform(
+						'translate(' + (elm$core$String$fromFloat(
+							A2(terezka$elm_charts$Internal$Draw$scaleValue, summary.x, width / 2)) + ', -5)')),
+						elm$svg$Svg$Attributes$style('text-anchor: middle;')
+					]),
+				_List_fromArray(
+					[label]));
+		};
+		var offset = F2(
+			function (x, i) {
+				return x + (width * (i - (barsPerGroup / 2)));
+			});
+		var viewBar = F3(
+			function (x, attributes, _n1) {
+				var i = _n1.a;
+				var height = _n1.b.height;
+				var label = _n1.b.label;
+				return A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							A4(
+							terezka$elm_charts$Internal$Draw$place,
+							summary,
+							{
+								x: A2(offset, x, i),
+								y: A2(
+									elm$core$Basics$max,
+									A2(terezka$elm_charts$Plot$closestToZero, summary.y.min, summary.y.max),
+									height)
+							},
+							0,
+							0)
+						]),
+					_List_fromArray(
+						[
+							A2(
+							elm$svg$Svg$map,
+							elm$core$Basics$never,
+							A2(
+								elm$core$Maybe$withDefault,
+								elm$svg$Svg$text(''),
+								A2(elm$core$Maybe$map, viewLabel_, label))),
+							A2(
+							elm$svg$Svg$rect,
+							_Utils_ap(
+								attributes,
+								_List_fromArray(
+									[
+										elm$svg$Svg$Attributes$width(
+										elm$core$String$fromFloat(
+											A2(terezka$elm_charts$Internal$Draw$scaleValue, summary.x, width))),
+										elm$svg$Svg$Attributes$height(
+										elm$core$String$fromFloat(
+											A2(
+												terezka$elm_charts$Internal$Draw$scaleValue,
+												summary.y,
+												elm$core$Basics$abs(height))))
+									])),
+							_List_Nil)
+						]));
+			});
+		var viewGroup = F2(
+			function (index, group_) {
+				return A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__bars__group')
+						]),
+					A3(
+						elm$core$List$map2,
+						viewBar(index + 1),
+						styles,
+						indexedHeights(group_)));
+			});
+		return elm$core$Maybe$Just(
+			A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						elm$svg$Svg$Attributes$class('elm-plot__bars')
+					]),
+				A2(elm$core$List$indexedMap, viewGroup, groups_)));
+	});
+var elm$svg$Svg$path = elm$svg$Svg$trustedNode('path');
+var elm$svg$Svg$Attributes$d = _VirtualDom_attribute('d');
+var terezka$elm_charts$Internal$Draw$joinCommands = function (commands) {
+	return A2(elm$core$String$join, ' ', commands);
+};
+var terezka$elm_charts$Internal$Draw$Point = F2(
+	function (x, y) {
+		return {x: x, y: y};
+	});
+var terezka$elm_charts$Internal$Draw$boolToString = function (bool) {
+	return bool ? '0' : '1';
+};
+var terezka$elm_charts$Internal$Draw$boolToWordString = function (bool) {
+	if (bool) {
+		return 'true';
+	} else {
+		return 'false';
+	}
+};
+var terezka$elm_charts$Internal$Draw$pointToString = function (_n0) {
+	var x = _n0.x;
+	var y = _n0.y;
+	return elm$core$String$fromFloat(x) + (' ' + elm$core$String$fromFloat(y));
+};
+var terezka$elm_charts$Internal$Draw$pointsToString = function (points) {
+	return A2(
+		elm$core$String$join,
+		',',
+		A2(elm$core$List$map, terezka$elm_charts$Internal$Draw$pointToString, points));
+};
+var terezka$elm_charts$Internal$Draw$stringifyCommand = function (command) {
+	switch (command.$) {
+		case 'Move':
+			var x = command.a;
+			var y = command.b;
+			return 'M' + terezka$elm_charts$Internal$Draw$pointToString(
+				A2(terezka$elm_charts$Internal$Draw$Point, x, y));
+		case 'Line':
+			var x = command.a;
+			var y = command.b;
+			return 'L' + terezka$elm_charts$Internal$Draw$pointToString(
+				A2(terezka$elm_charts$Internal$Draw$Point, x, y));
+		case 'HorizontalLine':
+			var x = command.a;
+			return 'H' + elm$core$String$fromFloat(x);
+		case 'VerticalLine':
+			var y = command.a;
+			return 'V' + elm$core$String$fromFloat(y);
+		case 'CubicBeziers':
+			var cx1 = command.a;
+			var cy1 = command.b;
+			var cx2 = command.c;
+			var cy2 = command.d;
+			var x = command.e;
+			var y = command.f;
+			return 'C' + terezka$elm_charts$Internal$Draw$pointsToString(
+				_List_fromArray(
+					[
+						A2(terezka$elm_charts$Internal$Draw$Point, cx1, cy1),
+						A2(terezka$elm_charts$Internal$Draw$Point, cx2, cy2),
+						A2(terezka$elm_charts$Internal$Draw$Point, x, y)
+					]));
+		case 'CubicBeziersShort':
+			var cx1 = command.a;
+			var cy1 = command.b;
+			var x = command.c;
+			var y = command.d;
+			return 'Q' + terezka$elm_charts$Internal$Draw$pointsToString(
+				_List_fromArray(
+					[
+						A2(terezka$elm_charts$Internal$Draw$Point, cx1, cy1),
+						A2(terezka$elm_charts$Internal$Draw$Point, x, y)
+					]));
+		case 'QuadraticBeziers':
+			var cx1 = command.a;
+			var cy1 = command.b;
+			var x = command.c;
+			var y = command.d;
+			return 'Q' + terezka$elm_charts$Internal$Draw$pointsToString(
+				_List_fromArray(
+					[
+						A2(terezka$elm_charts$Internal$Draw$Point, cx1, cy1),
+						A2(terezka$elm_charts$Internal$Draw$Point, x, y)
+					]));
+		case 'QuadraticBeziersShort':
+			var x = command.a;
+			var y = command.b;
+			return 'T' + terezka$elm_charts$Internal$Draw$pointToString(
+				A2(terezka$elm_charts$Internal$Draw$Point, x, y));
+		case 'Arc':
+			var rx = command.a;
+			var ry = command.b;
+			var xAxisRotation = command.c;
+			var largeArcFlag = command.d;
+			var sweepFlag = command.e;
+			var x = command.f;
+			var y = command.g;
+			return 'A' + terezka$elm_charts$Internal$Draw$joinCommands(
+				_List_fromArray(
+					[
+						terezka$elm_charts$Internal$Draw$pointToString(
+						A2(terezka$elm_charts$Internal$Draw$Point, rx, ry)),
+						terezka$elm_charts$Internal$Draw$boolToWordString(xAxisRotation),
+						terezka$elm_charts$Internal$Draw$boolToString(largeArcFlag),
+						terezka$elm_charts$Internal$Draw$boolToString(sweepFlag),
+						terezka$elm_charts$Internal$Draw$pointToString(
+						A2(terezka$elm_charts$Internal$Draw$Point, x, y))
+					]));
+		default:
+			return 'Z';
+	}
+};
+var terezka$elm_charts$Internal$Draw$draw = F2(
+	function (attributes, commands) {
+		return A2(
+			elm$svg$Svg$path,
+			A2(
+				elm$core$List$cons,
+				elm$svg$Svg$Attributes$d(
+					terezka$elm_charts$Internal$Draw$joinCommands(
+						A2(elm$core$List$map, terezka$elm_charts$Internal$Draw$stringifyCommand, commands))),
+				attributes),
+			_List_Nil);
+	});
+var terezka$elm_charts$Internal$Draw$Move = F2(
+	function (a, b) {
+		return {$: 'Move', a: a, b: b};
+	});
+var terezka$elm_charts$Internal$Draw$lineBegin = F2(
+	function (plot, points) {
+		if (points.b) {
+			var x = points.a.x;
+			var y = points.a.y;
+			var rest = points.b;
+			return _List_fromArray(
+				[
+					A2(terezka$elm_charts$Internal$Draw$Move, x, y)
+				]);
+		} else {
+			return _List_Nil;
+		}
+	});
+var terezka$elm_charts$Internal$Draw$Line = F2(
+	function (a, b) {
+		return {$: 'Line', a: a, b: b};
+	});
+var terezka$elm_charts$Internal$Draw$lineCommand = function (_n0) {
+	var x = _n0.x;
+	var y = _n0.y;
+	return A2(terezka$elm_charts$Internal$Draw$Line, x, y);
+};
+var terezka$elm_charts$Internal$Draw$Arc = F7(
+	function (a, b, c, d, e, f, g) {
+		return {$: 'Arc', a: a, b: b, c: c, d: d, e: e, f: f, g: g};
+	});
+var terezka$elm_charts$Internal$Draw$Close = {$: 'Close'};
+var terezka$elm_charts$Internal$Draw$CubicBeziers = F6(
+	function (a, b, c, d, e, f) {
+		return {$: 'CubicBeziers', a: a, b: b, c: c, d: d, e: e, f: f};
+	});
+var terezka$elm_charts$Internal$Draw$CubicBeziersShort = F4(
+	function (a, b, c, d) {
+		return {$: 'CubicBeziersShort', a: a, b: b, c: c, d: d};
+	});
+var terezka$elm_charts$Internal$Draw$HorizontalLine = function (a) {
+	return {$: 'HorizontalLine', a: a};
+};
+var terezka$elm_charts$Internal$Draw$QuadraticBeziers = F4(
+	function (a, b, c, d) {
+		return {$: 'QuadraticBeziers', a: a, b: b, c: c, d: d};
+	});
+var terezka$elm_charts$Internal$Draw$QuadraticBeziersShort = F2(
+	function (a, b) {
+		return {$: 'QuadraticBeziersShort', a: a, b: b};
+	});
+var terezka$elm_charts$Internal$Draw$VerticalLine = function (a) {
+	return {$: 'VerticalLine', a: a};
+};
+var terezka$elm_charts$Internal$Draw$translateCommand = F2(
+	function (plot, command) {
+		switch (command.$) {
+			case 'Move':
+				var x = command.a;
+				var y = command.b;
+				return A2(
+					terezka$elm_charts$Internal$Draw$Move,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'Line':
+				var x = command.a;
+				var y = command.b;
+				return A2(
+					terezka$elm_charts$Internal$Draw$Line,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'HorizontalLine':
+				var x = command.a;
+				return terezka$elm_charts$Internal$Draw$HorizontalLine(
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x));
+			case 'VerticalLine':
+				var y = command.a;
+				return terezka$elm_charts$Internal$Draw$VerticalLine(
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'CubicBeziers':
+				var cx1 = command.a;
+				var cy1 = command.b;
+				var cx2 = command.c;
+				var cy2 = command.d;
+				var x = command.e;
+				var y = command.f;
+				return A6(
+					terezka$elm_charts$Internal$Draw$CubicBeziers,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, cx1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, cy1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, cx2),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, cy2),
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'CubicBeziersShort':
+				var cx1 = command.a;
+				var cy1 = command.b;
+				var x = command.c;
+				var y = command.d;
+				return A4(
+					terezka$elm_charts$Internal$Draw$CubicBeziersShort,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, cx1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, cy1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'QuadraticBeziers':
+				var cx1 = command.a;
+				var cy1 = command.b;
+				var x = command.c;
+				var y = command.d;
+				return A4(
+					terezka$elm_charts$Internal$Draw$QuadraticBeziers,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, cx1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, cy1),
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'QuadraticBeziersShort':
+				var x = command.a;
+				var y = command.b;
+				return A2(
+					terezka$elm_charts$Internal$Draw$QuadraticBeziersShort,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			case 'Arc':
+				var rx = command.a;
+				var ry = command.b;
+				var xAxisRotation = command.c;
+				var largeArcFlag = command.d;
+				var sweepFlag = command.e;
+				var x = command.f;
+				var y = command.g;
+				return A7(
+					terezka$elm_charts$Internal$Draw$Arc,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, rx),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, ry),
+					xAxisRotation,
+					largeArcFlag,
+					sweepFlag,
+					A2(terezka$elm_charts$Internal$Draw$toSVGX, plot, x),
+					A2(terezka$elm_charts$Internal$Draw$toSVGY, plot, y));
+			default:
+				return terezka$elm_charts$Internal$Draw$Close;
+		}
+	});
+var terezka$elm_charts$Internal$Draw$linear = F2(
+	function (plot, points) {
+		return A2(
+			elm$core$List$map,
+			terezka$elm_charts$Internal$Draw$translateCommand(plot),
+			_Utils_ap(
+				A2(terezka$elm_charts$Internal$Draw$lineBegin, plot, points),
+				A2(elm$core$List$map, terezka$elm_charts$Internal$Draw$lineCommand, points)));
+	});
+var terezka$elm_charts$Plot$viewAxisLine = F3(
+	function (summary, at, axisLine) {
+		if (axisLine.$ === 'Just') {
+			var attributes = axisLine.a.attributes;
+			var start = axisLine.a.start;
+			var end = axisLine.a.end;
+			return A2(
+				terezka$elm_charts$Internal$Draw$draw,
+				attributes,
+				A2(
+					terezka$elm_charts$Internal$Draw$linear,
+					summary,
+					_List_fromArray(
+						[
+							at(start),
+							at(end)
+						])));
+		} else {
+			return elm$svg$Svg$text('');
+		}
+	});
+var terezka$elm_charts$Plot$viewGlitterLines = F2(
+	function (summary, _n0) {
+		var xLine = _n0.xLine;
+		var yLine = _n0.yLine;
+		var x = _n0.x;
+		var y = _n0.y;
+		return _List_fromArray(
+			[
+				A3(
+				terezka$elm_charts$Plot$viewAxisLine,
+				summary,
+				function (y_) {
+					return {x: x, y: y_};
+				},
+				A2(
+					elm$core$Maybe$map,
+					function (toLine) {
+						return toLine(summary.y);
+					},
+					xLine)),
+				A3(
+				terezka$elm_charts$Plot$viewAxisLine,
+				summary,
+				function (x_) {
+					return {x: x_, y: y};
+				},
+				A2(
+					elm$core$Maybe$map,
+					function (toLine) {
+						return toLine(summary.x);
+					},
+					yLine))
+			]);
+	});
+var elm$svg$Svg$line = elm$svg$Svg$trustedNode('line');
+var elm$svg$Svg$Attributes$x2 = _VirtualDom_attribute('x2');
+var elm$svg$Svg$Attributes$y2 = _VirtualDom_attribute('y2');
+var terezka$elm_charts$Plot$viewTickInner = F3(
+	function (attributes, width, height) {
+		return A2(
+			elm$svg$Svg$line,
+			A2(
+				elm$core$List$cons,
+				elm$svg$Svg$Attributes$x2(
+					elm$core$String$fromFloat(width)),
+				A2(
+					elm$core$List$cons,
+					elm$svg$Svg$Attributes$y2(
+						elm$core$String$fromFloat(height)),
+					attributes)),
+			_List_Nil);
+	});
+var terezka$elm_charts$Plot$viewActualHorizontalAxis = F4(
+	function (summary, _n0, glitterLabels, glitterTicks) {
+		var position = _n0.position;
+		var axisLine = _n0.axisLine;
+		var ticks = _n0.ticks;
+		var labels = _n0.labels;
+		var flipAnchor = _n0.flipAnchor;
+		var positionOfLabel = flipAnchor ? (-10) : 20;
+		var lengthOfTick = function (length) {
+			return flipAnchor ? (-length) : length;
+		};
+		var at = function (x) {
+			return {
+				x: x,
+				y: A2(position, summary.y.min, summary.y.max)
+			};
+		};
+		var viewLabel_ = function (props) {
+			return A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						A4(
+						terezka$elm_charts$Internal$Draw$place,
+						summary,
+						at(props.position),
+						0,
+						positionOfLabel),
+						elm$svg$Svg$Attributes$style('text-anchor: middle;')
+					]),
+				_List_fromArray(
+					[props.view]));
+		};
+		var viewTickLine = function (props) {
+			return A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						A4(
+						terezka$elm_charts$Internal$Draw$place,
+						summary,
+						at(props.position),
+						0,
+						0)
+					]),
+				_List_fromArray(
+					[
+						A3(
+						terezka$elm_charts$Plot$viewTickInner,
+						props.attributes,
+						0,
+						lengthOfTick(props.length))
+					]));
+		};
+		return A2(
+			elm$svg$Svg$g,
+			_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$class('elm-plot__horizontal-axis')
+				]),
+			_List_fromArray(
+				[
+					A3(terezka$elm_charts$Plot$viewAxisLine, summary, at, axisLine),
+					A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__ticks')
+						]),
+					A2(
+						elm$core$List$map,
+						viewTickLine,
+						_Utils_ap(ticks, glitterTicks))),
+					A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__labels')
+						]),
+					A2(
+						elm$core$List$map,
+						viewLabel_,
+						_Utils_ap(labels, glitterLabels)))
+				]));
+	});
+var terezka$elm_charts$Plot$viewHorizontalAxis = F4(
+	function (summary, axis, moreLabels, moreTicks) {
+		if (axis.$ === 'Axis') {
+			var toCustomizations = axis.a;
+			return elm$core$Maybe$Just(
+				A2(
+					elm$svg$Svg$map,
+					elm$core$Basics$never,
+					A4(
+						terezka$elm_charts$Plot$viewActualHorizontalAxis,
+						summary,
+						toCustomizations(summary.x),
+						moreLabels,
+						moreTicks)));
+		} else {
+			return elm$core$Maybe$Nothing;
+		}
+	});
+var terezka$elm_charts$Plot$viewActualHorizontalGrid = F2(
+	function (summary, gridLines) {
+		var viewGridLine = function (_n0) {
+			var attributes = _n0.attributes;
+			var position = _n0.position;
+			return A2(
+				terezka$elm_charts$Internal$Draw$draw,
+				attributes,
+				A2(
+					terezka$elm_charts$Internal$Draw$linear,
+					summary,
+					_List_fromArray(
+						[
+							{x: summary.x.min, y: position},
+							{x: summary.x.max, y: position}
+						])));
+		};
+		return A2(
+			elm$svg$Svg$g,
+			_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$class('elm-plot__vertical-grid')
+				]),
+			A2(elm$core$List$map, viewGridLine, gridLines));
+	});
+var terezka$elm_charts$Plot$viewHorizontalGrid = F2(
+	function (summary, grid) {
+		if (grid.$ === 'Grid') {
+			var toCustomizations = grid.a;
+			return elm$core$Maybe$Just(
+				A2(
+					elm$svg$Svg$map,
+					elm$core$Basics$never,
+					A2(
+						terezka$elm_charts$Plot$viewActualHorizontalGrid,
+						summary,
+						toCustomizations(summary.y))));
+		} else {
+			return elm$core$Maybe$Nothing;
+		}
+	});
+var terezka$elm_charts$Plot$viewActualVerticalAxis = F3(
+	function (summary, _n0, glitterTicks) {
+		var position = _n0.position;
+		var axisLine = _n0.axisLine;
+		var ticks = _n0.ticks;
+		var labels = _n0.labels;
+		var flipAnchor = _n0.flipAnchor;
+		var positionOfLabel = flipAnchor ? 10 : (-10);
+		var lengthOfTick = function (length) {
+			return flipAnchor ? length : (-length);
+		};
+		var at = function (y) {
+			return {
+				x: A2(position, summary.x.min, summary.x.max),
+				y: y
+			};
+		};
+		var viewTickLine = function (props) {
+			return A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						A4(
+						terezka$elm_charts$Internal$Draw$place,
+						summary,
+						at(props.position),
+						0,
+						0)
+					]),
+				_List_fromArray(
+					[
+						A3(
+						terezka$elm_charts$Plot$viewTickInner,
+						props.attributes,
+						lengthOfTick(props.length),
+						0)
+					]));
+		};
+		var anchorOfLabel = flipAnchor ? 'text-anchor: start;' : 'text-anchor: end;';
+		var viewLabel_ = function (props) {
+			return A2(
+				elm$svg$Svg$g,
+				_List_fromArray(
+					[
+						A4(
+						terezka$elm_charts$Internal$Draw$place,
+						summary,
+						at(props.position),
+						positionOfLabel,
+						5),
+						elm$svg$Svg$Attributes$style(anchorOfLabel)
+					]),
+				_List_fromArray(
+					[props.view]));
+		};
+		return A2(
+			elm$svg$Svg$g,
+			_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$class('elm-plot__vertical-axis')
+				]),
+			_List_fromArray(
+				[
+					A3(terezka$elm_charts$Plot$viewAxisLine, summary, at, axisLine),
+					A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__ticks')
+						]),
+					A2(
+						elm$core$List$map,
+						viewTickLine,
+						_Utils_ap(ticks, glitterTicks))),
+					A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__labels')
+						]),
+					A2(elm$core$List$map, viewLabel_, labels))
+				]));
+	});
+var terezka$elm_charts$Plot$viewVerticalAxis = F3(
+	function (summary, axis, moreTicks) {
+		if (axis.$ === 'Axis') {
+			var toCustomizations = axis.a;
+			return elm$core$Maybe$Just(
+				A2(
+					elm$svg$Svg$map,
+					elm$core$Basics$never,
+					A3(
+						terezka$elm_charts$Plot$viewActualVerticalAxis,
+						summary,
+						toCustomizations(summary.y),
+						moreTicks)));
+		} else {
+			return elm$core$Maybe$Nothing;
+		}
+	});
+var terezka$elm_charts$Plot$viewActualVerticalGrid = F2(
+	function (summary, gridLines) {
+		var viewGridLine = function (_n0) {
+			var attributes = _n0.attributes;
+			var position = _n0.position;
+			return A2(
+				terezka$elm_charts$Internal$Draw$draw,
+				attributes,
+				A2(
+					terezka$elm_charts$Internal$Draw$linear,
+					summary,
+					_List_fromArray(
+						[
+							{x: position, y: summary.y.min},
+							{x: position, y: summary.y.max}
+						])));
+		};
+		return A2(
+			elm$svg$Svg$g,
+			_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$class('elm-plot__horizontal-grid')
+				]),
+			A2(elm$core$List$map, viewGridLine, gridLines));
+	});
+var terezka$elm_charts$Plot$viewVerticalGrid = F2(
+	function (summary, grid) {
+		if (grid.$ === 'Grid') {
+			var toCustomizations = grid.a;
+			return elm$core$Maybe$Just(
+				A2(
+					elm$svg$Svg$map,
+					elm$core$Basics$never,
+					A2(
+						terezka$elm_charts$Plot$viewActualVerticalGrid,
+						summary,
+						toCustomizations(summary.x))));
+		} else {
+			return elm$core$Maybe$Nothing;
+		}
+	});
+var terezka$elm_charts$Plot$viewBarsCustom = F3(
+	function (customizations, bars, data) {
+		var toDataPoint = F3(
+			function (index, group_, _n1) {
+				var height = _n1.height;
+				return {
+					x: index + 1,
+					xLine: group_.verticalLine(index + 1),
+					y: height,
+					yLine: elm$core$Maybe$Nothing
+				};
+			});
+		var toDataPoints = F2(
+			function (index, group_) {
+				return A2(
+					elm$core$List$map,
+					A2(toDataPoint, index, group_),
+					group_.bars);
+			});
+		var groups_ = bars.toGroups(data);
+		var hints = A2(
+			elm$core$List$filterMap,
+			elm$core$Basics$identity,
+			A2(
+				elm$core$List$indexedMap,
+				F2(
+					function (index, group_) {
+						return group_.hint(index + 1);
+					}),
+				groups_));
+		var xLabels = A2(
+			elm$core$List$indexedMap,
+			F2(
+				function (index, group_) {
+					return group_.label(index + 1);
+				}),
+			groups_);
+		var dataPoints = elm$core$List$concat(
+			A2(elm$core$List$indexedMap, toDataPoints, groups_));
+		var summary = A3(terezka$elm_charts$Plot$toPlotSummary, customizations, terezka$elm_charts$Plot$addNiceReachForBars, dataPoints);
+		var viewHint = function () {
+			if (!hints.b) {
+				return elm$svg$Svg$text('');
+			} else {
+				var hints_ = hints;
+				return A2(
+					elm$html$Html$map,
+					elm$core$Basics$never,
+					A2(customizations.hintContainer, summary, hints_));
+			}
+		}();
+		var viewGlitter = elm$core$Maybe$Just(
+			A2(
+				elm$svg$Svg$map,
+				elm$core$Basics$never,
+				A2(
+					elm$svg$Svg$g,
+					_List_fromArray(
+						[
+							elm$svg$Svg$Attributes$class('elm-plot__glitter')
+						]),
+					A2(
+						elm$core$List$concatMap,
+						terezka$elm_charts$Plot$viewGlitterLines(summary),
+						dataPoints))));
+		var children = A2(
+			elm$core$List$filterMap,
+			elm$core$Basics$identity,
+			_List_fromArray(
+				[
+					elm$core$Maybe$Just(
+					A2(terezka$elm_charts$Plot$defineClipPath, customizations, summary)),
+					A2(terezka$elm_charts$Plot$viewHorizontalGrid, summary, customizations.grid.horizontal),
+					A2(terezka$elm_charts$Plot$viewVerticalGrid, summary, customizations.grid.vertical),
+					A3(terezka$elm_charts$Plot$viewActualBars, summary, bars, groups_),
+					A4(terezka$elm_charts$Plot$viewHorizontalAxis, summary, customizations.horizontalAxis, xLabels, _List_Nil),
+					A3(terezka$elm_charts$Plot$viewVerticalAxis, summary, bars.axis, _List_Nil),
+					viewGlitter
+				]));
+		return A2(
+			elm$html$Html$div,
+			A2(terezka$elm_charts$Plot$containerAttributes, customizations, summary),
+			_List_fromArray(
+				[
+					A2(
+					elm$svg$Svg$svg,
+					terezka$elm_charts$Plot$innerAttributes(customizations),
+					children),
+					viewHint
+				]));
+	});
+var terezka$elm_charts$Plot$viewBars = terezka$elm_charts$Plot$viewBarsCustom(terezka$elm_charts$Plot$defaultBarsPlotCustomizations);
+var author$project$Astronaut$view = function (astronauts) {
+	var genderGroup = F3(
+		function (genstr, gen, astros) {
+			return A2(
+				terezka$elm_charts$Plot$group,
+				genstr,
+				elm$core$List$singleton(
+					elm$core$List$length(
+						A2(
+							elm$core$List$filter,
+							function (astro) {
+								return _Utils_eq(astro.gender, gen);
+							},
+							astros))));
+		});
+	var genders = function (astros) {
+		return _List_fromArray(
+			[
+				A3(genderGroup, 'Men', author$project$Astronaut$Male, astros),
+				A3(genderGroup, 'Women', author$project$Astronaut$Female, astros)
+			]);
+	};
+	var bars = terezka$elm_charts$Plot$groups(genders);
+	return A2(terezka$elm_charts$Plot$viewBars, bars, astronauts);
+};
+var author$project$Main$SelectCity = function (a) {
+	return {$: 'SelectCity', a: a};
+};
+var author$project$Main$SelectFile = {$: 'SelectFile'};
+var elm$core$List$map4 = _List_map4;
+var terezka$line_charts$Internal$Line$Series = function (a) {
+	return {$: 'Series', a: a};
+};
+var terezka$line_charts$Internal$Line$SeriesConfig = F5(
+	function (color, shape, dashing, label, data) {
+		return {color: color, dashing: dashing, data: data, label: label, shape: shape};
+	});
+var terezka$line_charts$Internal$Line$line = F4(
+	function (color_, shape_, label_, data_) {
+		return terezka$line_charts$Internal$Line$Series(
+			A5(terezka$line_charts$Internal$Line$SeriesConfig, color_, shape_, _List_Nil, label_, data_));
+	});
+var avh4$elm_color$Color$RgbaSpace = F4(
+	function (a, b, c, d) {
+		return {$: 'RgbaSpace', a: a, b: b, c: c, d: d};
+	});
+var avh4$elm_color$Color$scaleFrom255 = function (c) {
+	return c / 255;
+};
+var avh4$elm_color$Color$rgb255 = F3(
+	function (r, g, b) {
+		return A4(
+			avh4$elm_color$Color$RgbaSpace,
+			avh4$elm_color$Color$scaleFrom255(r),
+			avh4$elm_color$Color$scaleFrom255(g),
+			avh4$elm_color$Color$scaleFrom255(b),
+			1.0);
+	});
+var terezka$line_charts$LineChart$Colors$blue = A3(avh4$elm_color$Color$rgb255, 3, 169, 244);
+var terezka$line_charts$LineChart$Colors$gold = A3(avh4$elm_color$Color$rgb255, 205, 145, 60);
+var terezka$line_charts$LineChart$Colors$pink = A3(avh4$elm_color$Color$rgb255, 245, 105, 215);
+var terezka$line_charts$LineChart$defaultColors = _List_fromArray(
+	[terezka$line_charts$LineChart$Colors$pink, terezka$line_charts$LineChart$Colors$blue, terezka$line_charts$LineChart$Colors$gold]);
+var terezka$line_charts$LineChart$defaultLabel = _List_fromArray(
+	['First', 'Second', 'Third']);
+var terezka$line_charts$Internal$Dots$Circle = {$: 'Circle'};
+var terezka$line_charts$Internal$Dots$Cross = {$: 'Cross'};
+var terezka$line_charts$Internal$Dots$Triangle = {$: 'Triangle'};
+var terezka$line_charts$LineChart$defaultShapes = _List_fromArray(
+	[terezka$line_charts$Internal$Dots$Circle, terezka$line_charts$Internal$Dots$Triangle, terezka$line_charts$Internal$Dots$Cross]);
+var terezka$line_charts$LineChart$defaultLines = A4(elm$core$List$map4, terezka$line_charts$Internal$Line$line, terezka$line_charts$LineChart$defaultColors, terezka$line_charts$LineChart$defaultShapes, terezka$line_charts$LineChart$defaultLabel);
+var terezka$line_charts$Internal$Area$None = {$: 'None'};
+var terezka$line_charts$Internal$Area$none = terezka$line_charts$Internal$Area$None;
+var terezka$line_charts$LineChart$Area$default = terezka$line_charts$Internal$Area$none;
+var elm$core$Basics$composeL = F3(
+	function (g, f, x) {
+		return g(
+			f(x));
+	});
+var terezka$line_charts$Internal$Axis$Config = function (a) {
+	return {$: 'Config', a: a};
+};
+var terezka$line_charts$Internal$Axis$custom = terezka$line_charts$Internal$Axis$Config;
+var terezka$line_charts$Internal$Axis$Line$Config = function (a) {
+	return {$: 'Config', a: a};
+};
+var terezka$line_charts$Internal$Axis$Line$custom = terezka$line_charts$Internal$Axis$Line$Config;
+var terezka$line_charts$Internal$Coordinate$smallestRange = F2(
+	function (data, range_) {
+		return {
+			max: A2(elm$core$Basics$min, data.max, range_.max),
+			min: A2(elm$core$Basics$max, data.min, range_.min)
+		};
+	});
+var terezka$line_charts$Internal$Axis$Line$rangeFrame = function (color) {
+	return terezka$line_charts$Internal$Axis$Line$custom(
+		F2(
+			function (data, range) {
+				var smallest = A2(terezka$line_charts$Internal$Coordinate$smallestRange, data, range);
+				return {color: color, end: smallest.max, events: _List_Nil, start: smallest.min, width: 1};
+			}));
+};
+var terezka$line_charts$Internal$Axis$Range$Padded = F2(
+	function (a, b) {
+		return {$: 'Padded', a: a, b: b};
+	});
+var terezka$line_charts$Internal$Axis$Range$padded = terezka$line_charts$Internal$Axis$Range$Padded;
+var terezka$line_charts$Internal$Axis$Ticks$Config = function (a) {
+	return {$: 'Config', a: a};
+};
+var terezka$line_charts$Internal$Axis$Ticks$custom = terezka$line_charts$Internal$Axis$Ticks$Config;
+var terezka$line_charts$Internal$Axis$Title$Config = function (a) {
+	return {$: 'Config', a: a};
+};
+var terezka$line_charts$Internal$Axis$Title$custom = F4(
+	function (position, x, y, title) {
+		return terezka$line_charts$Internal$Axis$Title$Config(
+			{
+				offset: _Utils_Tuple2(x, y),
+				position: position,
+				view: title
+			});
+	});
+var terezka$line_charts$Internal$Svg$label = F2(
+	function (color, string) {
+		return A2(
+			elm$svg$Svg$text_,
+			_List_fromArray(
+				[
+					elm$svg$Svg$Attributes$fill(color),
+					elm$svg$Svg$Attributes$style('pointer-events: none;')
+				]),
+			_List_fromArray(
+				[
+					A2(
+					elm$svg$Svg$tspan,
+					_List_Nil,
+					_List_fromArray(
+						[
+							elm$svg$Svg$text(string)
+						]))
+				]));
+	});
+var terezka$line_charts$Internal$Axis$Title$atPosition = F3(
+	function (position, x, y) {
+		return A2(
+			elm$core$Basics$composeL,
+			A3(terezka$line_charts$Internal$Axis$Title$custom, position, x, y),
+			terezka$line_charts$Internal$Svg$label('inherit'));
+	});
+var terezka$line_charts$Internal$Axis$Title$atDataMax = function () {
+	var position = F2(
+		function (data, range) {
+			return A2(elm$core$Basics$min, data.max, range.max);
+		});
+	return terezka$line_charts$Internal$Axis$Title$atPosition(position);
+}();
+var terezka$line_charts$Internal$Axis$Values$Around = function (a) {
+	return {$: 'Around', a: a};
+};
+var terezka$line_charts$Internal$Axis$Values$around = terezka$line_charts$Internal$Axis$Values$Around;
+var terezka$line_charts$Internal$Axis$Values$ceilingTo = F2(
+	function (prec, number) {
+		return prec * elm$core$Basics$ceiling(number / prec);
+	});
+var terezka$line_charts$Internal$Axis$Values$getBeginning = F2(
+	function (min, interval) {
+		var multiple = min / interval;
+		return _Utils_eq(
+			multiple,
+			elm$core$Basics$round(multiple)) ? min : A2(terezka$line_charts$Internal$Axis$Values$ceilingTo, interval, min);
+	});
 var terezka$line_charts$Internal$Axis$Values$correctFloat = function (prec) {
 	return A2(
 		elm$core$Basics$composeR,
@@ -7370,7 +9221,6 @@ var terezka$line_charts$Internal$Axis$Values$getPrecision = function (number) {
 	}
 };
 var elm$core$Basics$e = _Basics_e;
-var elm$core$Basics$pow = _Basics_pow;
 var terezka$line_charts$Internal$Utils$magnitude = function (num) {
 	return A2(
 		elm$core$Basics$pow,
@@ -7562,8 +9412,6 @@ var terezka$line_charts$Internal$Axis$Intersection$default = A2(
 		return $.min;
 	});
 var terezka$line_charts$LineChart$Axis$Intersection$default = terezka$line_charts$Internal$Axis$Intersection$default;
-var elm$virtual_dom$VirtualDom$style = _VirtualDom_style;
-var elm$html$Html$Attributes$style = elm$virtual_dom$VirtualDom$style;
 var terezka$line_charts$Internal$Container$Margin = F4(
 	function (top, right, bottom, left) {
 		return {bottom: bottom, left: left, right: right, top: top};
@@ -7661,8 +9509,6 @@ var terezka$line_charts$Internal$Legends$Grouped = F2(
 	function (a, b) {
 		return {$: 'Grouped', a: a, b: b};
 	});
-var elm$svg$Svg$g = elm$svg$Svg$trustedNode('g');
-var elm$svg$Svg$Attributes$class = _VirtualDom_attribute('class');
 var terezka$line_charts$Internal$Svg$Transfrom = F2(
 	function (a, b) {
 		return {$: 'Transfrom', a: a, b: b};
@@ -7671,7 +9517,6 @@ var terezka$line_charts$Internal$Svg$offset = F2(
 	function (x, y) {
 		return A2(terezka$line_charts$Internal$Svg$Transfrom, x, y);
 	});
-var elm$svg$Svg$Attributes$transform = _VirtualDom_attribute('transform');
 var terezka$line_charts$Internal$Svg$addPosition = F2(
 	function (_n0, _n1) {
 		var x = _n0.a;
@@ -7833,19 +9678,6 @@ var terezka$line_charts$LineChart$defaultConfig = F2(
 			y: A3(terezka$line_charts$LineChart$Axis$default, 400, '', toY)
 		};
 	});
-var elm$core$List$append = F2(
-	function (xs, ys) {
-		if (!ys.b) {
-			return xs;
-		} else {
-			return A3(elm$core$List$foldr, elm$core$List$cons, ys, xs);
-		}
-	});
-var elm$core$List$concat = function (lists) {
-	return A3(elm$core$List$foldr, elm$core$List$append, _List_Nil, lists);
-};
-var elm$svg$Svg$defs = elm$svg$Svg$trustedNode('defs');
-var elm$svg$Svg$svg = elm$svg$Svg$trustedNode('svg');
 var terezka$line_charts$Internal$Axis$variable = function (_n0) {
 	var config = _n0.a;
 	return config.variable;
@@ -7882,7 +9714,6 @@ var avh4$elm_color$Color$toCssString = function (_n0) {
 				')'
 			]));
 };
-var elm$svg$Svg$Attributes$stroke = _VirtualDom_attribute('stroke');
 var elm$svg$Svg$Attributes$strokeWidth = _VirtualDom_attribute('stroke-width');
 var elm$svg$Svg$Attributes$clipPath = _VirtualDom_attribute('clip-path');
 var terezka$line_charts$Internal$Utils$toChartAreaId = function (id) {
@@ -7915,7 +9746,6 @@ var terezka$line_charts$Internal$Path$Line = function (a) {
 var terezka$line_charts$Internal$Path$Move = function (a) {
 	return {$: 'Move', a: a};
 };
-var elm$svg$Svg$Attributes$d = _VirtualDom_attribute('d');
 var terezka$line_charts$Internal$Path$join = function (commands) {
 	return A2(elm$core$String$join, ' ', commands);
 };
@@ -8097,7 +9927,6 @@ var terezka$line_charts$Internal$Path$description = F2(
 					terezka$line_charts$Internal$Path$toString),
 				commands));
 	});
-var elm$svg$Svg$path = elm$svg$Svg$trustedNode('path');
 var terezka$line_charts$Internal$Path$viewPath = function (attributes) {
 	return A2(elm$svg$Svg$path, attributes, _List_Nil);
 };
@@ -8211,11 +10040,8 @@ var terezka$line_charts$Internal$Axis$viewHorizontalLabel = F4(
 			_List_fromArray(
 				[view]));
 	});
-var elm$svg$Svg$line = elm$svg$Svg$trustedNode('line');
 var elm$svg$Svg$Attributes$x1 = _VirtualDom_attribute('x1');
-var elm$svg$Svg$Attributes$x2 = _VirtualDom_attribute('x2');
 var elm$svg$Svg$Attributes$y1 = _VirtualDom_attribute('y1');
-var elm$svg$Svg$Attributes$y2 = _VirtualDom_attribute('y2');
 var terezka$line_charts$Internal$Svg$xTick = F5(
 	function (system, height, userAttributes, y, x) {
 		var attributes = A3(
@@ -8571,11 +10397,6 @@ var terezka$line_charts$Internal$Axis$ticks = function (_n0) {
 	var config = _n0.a;
 	return config.ticks;
 };
-var elm$core$List$concatMap = F2(
-	function (f, list) {
-		return elm$core$List$concat(
-			A2(elm$core$List$map, f, list));
-	});
 var elm$svg$Svg$circle = elm$svg$Svg$trustedNode('circle');
 var elm$svg$Svg$Attributes$cx = _VirtualDom_attribute('cx');
 var elm$svg$Svg$Attributes$cy = _VirtualDom_attribute('cy');
@@ -8713,15 +10534,6 @@ var terezka$line_charts$Internal$Junk$getLayers = F5(
 		var toLayers = _n0.a;
 		return A4(toLayers, series, toX, toY, system);
 	});
-var elm$core$List$head = function (list) {
-	if (list.b) {
-		var x = list.a;
-		var xs = list.b;
-		return elm$core$Maybe$Just(x);
-	} else {
-		return elm$core$Maybe$Nothing;
-	}
-};
 var terezka$line_charts$Internal$Line$label = function (_n0) {
 	var config = _n0.a;
 	return config.label;
@@ -8899,11 +10711,6 @@ var terezka$line_charts$Internal$Dots$viewCross = F5(
 					A2(terezka$line_charts$Internal$Dots$varietyAttributes, color, variety))),
 			_List_Nil);
 	});
-var elm$svg$Svg$rect = elm$svg$Svg$trustedNode('rect');
-var elm$svg$Svg$Attributes$height = _VirtualDom_attribute('height');
-var elm$svg$Svg$Attributes$width = _VirtualDom_attribute('width');
-var elm$svg$Svg$Attributes$x = _VirtualDom_attribute('x');
-var elm$svg$Svg$Attributes$y = _VirtualDom_attribute('y');
 var terezka$line_charts$Internal$Dots$viewDiamond = F5(
 	function (events, variety, color, area, point) {
 		var side = elm$core$Basics$sqrt(area);
@@ -9299,10 +11106,6 @@ var terezka$line_charts$Internal$Line$viewNormal = function (_n0) {
 		});
 	return A4(elm$core$List$map3, view_, areas, lines, dots);
 };
-var elm$core$Basics$clamp = F3(
-	function (low, high, number) {
-		return (_Utils_cmp(number, low) < 0) ? low : ((_Utils_cmp(number, high) > 0) ? high : number);
-	});
 var terezka$line_charts$Internal$Data$isWithinRange = F2(
 	function (system, point) {
 		return _Utils_eq(
@@ -10050,8 +11853,6 @@ var terezka$line_charts$LineChart$chartAreaPlatform = F3(
 				]));
 		return A2(elm$svg$Svg$rect, attributes, _List_Nil);
 	});
-var elm$svg$Svg$clipPath = elm$svg$Svg$trustedNode('clipPath');
-var elm$svg$Svg$Attributes$id = _VirtualDom_attribute('id');
 var terezka$line_charts$LineChart$clipPath = function (system) {
 	return A2(
 		elm$svg$Svg$clipPath,
@@ -10544,7 +12345,6 @@ var terezka$line_charts$LineChart$toSystem = F2(
 					system)
 			});
 	});
-var elm$svg$Svg$Attributes$viewBox = _VirtualDom_attribute('viewBox');
 var terezka$line_charts$LineChart$viewBoxAttribute = function (_n0) {
 	var frame = _n0.frame;
 	return elm$svg$Svg$Attributes$viewBox(
@@ -10650,16 +12450,6 @@ var terezka$line_charts$LineChart$view = F2(
 		return terezka$line_charts$LineChart$viewCustom(
 			A2(terezka$line_charts$LineChart$defaultConfig, toX, toY));
 	});
-var terezka$line_charts$LineChart$view1 = F3(
-	function (toX, toY, dataset) {
-		return A3(
-			terezka$line_charts$LineChart$view,
-			toX,
-			toY,
-			terezka$line_charts$LineChart$defaultLines(
-				_List_fromArray(
-					[dataset])));
-	});
 var terezka$line_charts$LineChart$view2 = F4(
 	function (toX, toY, dataset1, dataset2) {
 		return A3(
@@ -10670,121 +12460,209 @@ var terezka$line_charts$LineChart$view2 = F4(
 				_List_fromArray(
 					[dataset1, dataset2])));
 	});
-var author$project$Main$viewMocks = function (model) {
-	var _n0 = _Utils_Tuple2(model.coord1, model.coord2);
-	if (_n0.a.$ === 'Ok') {
-		if (_n0.b.$ === 'Ok') {
-			var data1 = _n0.a.a;
-			var data2 = _n0.b.a;
-			return A4(
-				terezka$line_charts$LineChart$view2,
-				function ($) {
-					return $.x;
-				},
-				function ($) {
-					return $.y;
-				},
-				data1,
-				data2);
-		} else {
-			var data = _n0.a.a;
-			var err = _n0.b.a;
-			return A2(
-				elm$html$Html$div,
-				_List_Nil,
-				_List_fromArray(
-					[
-						A3(
-						terezka$line_charts$LineChart$view1,
-						function ($) {
-							return $.x;
-						},
-						function ($) {
-							return $.y;
-						},
-						data),
-						elm$html$Html$text(
-						'mockJSON2: ' + elm$json$Json$Decode$errorToString(err))
-					]));
-		}
-	} else {
-		if (_n0.b.$ === 'Ok') {
-			var err = _n0.a.a;
-			var data = _n0.b.a;
-			return A2(
-				elm$html$Html$div,
-				_List_Nil,
-				_List_fromArray(
-					[
-						A3(
-						terezka$line_charts$LineChart$view1,
-						function ($) {
-							return $.x;
-						},
-						function ($) {
-							return $.y;
-						},
-						data),
-						elm$html$Html$text(
-						'mockJSON1: ' + elm$json$Json$Decode$errorToString(err))
-					]));
-		} else {
-			return elm$html$Html$text('');
-		}
-	}
+var author$project$Point$viewBoth = F2(
+	function (data1, data2) {
+		return A4(
+			terezka$line_charts$LineChart$view2,
+			function ($) {
+				return $.x;
+			},
+			function ($) {
+				return $.y;
+			},
+			data1,
+			data2);
+	});
+var elm$html$Html$text = elm$virtual_dom$VirtualDom$text;
+var author$project$Point$viewError = function (error) {
+	return elm$html$Html$text(
+		elm$json$Json$Decode$errorToString(error));
 };
+var terezka$line_charts$LineChart$view1 = F3(
+	function (toX, toY, dataset) {
+		return A3(
+			terezka$line_charts$LineChart$view,
+			toX,
+			toY,
+			terezka$line_charts$LineChart$defaultLines(
+				_List_fromArray(
+					[dataset])));
+	});
+var author$project$Point$viewOne = function (data) {
+	return A3(
+		terezka$line_charts$LineChart$view1,
+		function ($) {
+			return $.x;
+		},
+		function ($) {
+			return $.y;
+		},
+		data);
+};
+var author$project$Main$viewPoints = F2(
+	function (rp1, rp2) {
+		var _n0 = _Utils_Tuple2(rp1, rp2);
+		if (_n0.a.$ === 'Ok') {
+			if (_n0.b.$ === 'Ok') {
+				var p1 = _n0.a.a;
+				var p2 = _n0.b.a;
+				return A2(author$project$Point$viewBoth, p1, p2);
+			} else {
+				var p1 = _n0.a.a;
+				var e2 = _n0.b.a;
+				return A2(
+					elm$html$Html$div,
+					_List_Nil,
+					_List_fromArray(
+						[
+							author$project$Point$viewOne(p1),
+							author$project$Point$viewError(e2)
+						]));
+			}
+		} else {
+			if (_n0.b.$ === 'Ok') {
+				var e1 = _n0.a.a;
+				var p2 = _n0.b.a;
+				return A2(
+					elm$html$Html$div,
+					_List_Nil,
+					_List_fromArray(
+						[
+							author$project$Point$viewOne(p2),
+							author$project$Point$viewError(e1)
+						]));
+			} else {
+				var e1 = _n0.a.a;
+				var e2 = _n0.b.a;
+				return A2(
+					elm$html$Html$div,
+					_List_Nil,
+					_List_fromArray(
+						[
+							author$project$Point$viewError(e1),
+							author$project$Point$viewError(e2)
+						]));
+			}
+		}
+	});
+var elm$core$String$contains = _String_contains;
+var author$project$Tax$toFiltered = F2(
+	function (mselectedCity, taxes) {
+		if (mselectedCity.$ === 'Just') {
+			var selectedCity = mselectedCity.a;
+			var filtered = A2(
+				elm$core$List$filter,
+				function (_n5) {
+					var city = _n5.city;
+					return _Utils_eq(city, selectedCity);
+				},
+				taxes);
+			return {
+				fnb: A2(
+					elm$core$List$filter,
+					function (_n1) {
+						var kind = _n1.kind;
+						return A2(elm$core$String$contains, 'FNB', kind);
+					},
+					filtered),
+				tfb: A2(
+					elm$core$List$filter,
+					function (_n2) {
+						var kind = _n2.kind;
+						return A2(elm$core$String$contains, 'TFB', kind);
+					},
+					filtered),
+				th: A2(
+					elm$core$List$filter,
+					function (_n3) {
+						var kind = _n3.kind;
+						return A2(elm$core$String$contains, 'TH', kind);
+					},
+					filtered),
+				toem: A2(
+					elm$core$List$filter,
+					function (_n4) {
+						var kind = _n4.kind;
+						return A2(elm$core$String$contains, 'TOEM', kind);
+					},
+					filtered)
+			};
+		} else {
+			return {fnb: _List_Nil, tfb: _List_Nil, th: _List_Nil, toem: _List_Nil};
+		}
+	});
 var terezka$line_charts$LineChart$line = terezka$line_charts$Internal$Line$line;
 var terezka$line_charts$LineChart$Colors$blueLight = A3(avh4$elm_color$Color$rgb255, 128, 222, 234);
 var terezka$line_charts$LineChart$Colors$greenLight = A3(avh4$elm_color$Color$rgb255, 197, 225, 165);
 var terezka$line_charts$LineChart$Colors$purpleLight = A3(avh4$elm_color$Color$rgb255, 206, 147, 216);
 var terezka$line_charts$LineChart$Colors$redLight = A3(avh4$elm_color$Color$rgb255, 239, 154, 154);
 var terezka$line_charts$LineChart$Dots$circle = terezka$line_charts$Internal$Dots$Circle;
-var author$project$Main$viewTaxes = function (rmdata) {
-	switch (rmdata.$) {
-		case 'Success':
-			var data = rmdata.a;
-			return A3(
-				terezka$line_charts$LineChart$view,
-				function ($) {
-					return $.year;
-				},
-				function ($) {
-					return $.rate;
-				},
-				_List_fromArray(
-					[
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$blueLight, terezka$line_charts$LineChart$Dots$circle, 'FNB', data.fnb),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$redLight, terezka$line_charts$LineChart$Dots$circle, 'TFB', data.tfb),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$greenLight, terezka$line_charts$LineChart$Dots$circle, 'TH', data.th),
-						A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$purpleLight, terezka$line_charts$LineChart$Dots$circle, 'TOEM', data.toem)
-					]));
-		case 'Failure':
-			var err = rmdata.a;
-			var errorToString = function (error) {
-				switch (error.$) {
-					case 'BadUrl':
-						var url = error.a;
-						return 'Bad URL: ' + url;
-					case 'Timeout':
-						return 'Request timed out';
-					case 'NetworkError':
-						return 'Internet connection was lost';
-					case 'BadStatus':
-						var n = error.a;
-						return 'Response contained a bad status: ' + elm$core$String$fromInt(n);
-					default:
-						var body = error.a;
-						return 'Could not decode payload: ' + body;
-				}
-			};
-			return elm$html$Html$text(
-				errorToString(err));
-		case 'Loading':
-			return elm$html$Html$text('Loading...');
+var author$project$Tax$view = F2(
+	function (city, rawdata) {
+		var data = A2(author$project$Tax$toFiltered, city, rawdata);
+		return A3(
+			terezka$line_charts$LineChart$view,
+			function ($) {
+				return $.year;
+			},
+			function ($) {
+				return $.rate;
+			},
+			_List_fromArray(
+				[
+					A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$blueLight, terezka$line_charts$LineChart$Dots$circle, 'FNB', data.fnb),
+					A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$redLight, terezka$line_charts$LineChart$Dots$circle, 'TFB', data.tfb),
+					A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$greenLight, terezka$line_charts$LineChart$Dots$circle, 'TH', data.th),
+					A4(terezka$line_charts$LineChart$line, terezka$line_charts$LineChart$Colors$purpleLight, terezka$line_charts$LineChart$Dots$circle, 'TOEM', data.toem)
+				]));
+	});
+var author$project$Utils$errorToString = function (error) {
+	switch (error.$) {
+		case 'BadUrl':
+			var url = error.a;
+			return 'Bad URL: ' + url;
+		case 'Timeout':
+			return 'Request timed out';
+		case 'NetworkError':
+			return 'Internet connection was lost';
+		case 'BadStatus':
+			var n = error.a;
+			return 'Response contained a bad status: ' + elm$core$String$fromInt(n);
 		default:
-			return elm$html$Html$text('');
+			var body = error.a;
+			return 'Could not decode payload: ' + body;
 	}
 };
+var author$project$Main$viewTaxes = F2(
+	function (city, webTaxes) {
+		switch (webTaxes.$) {
+			case 'Success':
+				var taxes = webTaxes.a;
+				return A2(author$project$Tax$view, city, taxes);
+			case 'Failure':
+				var error = webTaxes.a;
+				return elm$html$Html$text(
+					author$project$Utils$errorToString(error));
+			case 'Loading':
+				return elm$html$Html$text('Loading...');
+			default:
+				return elm$html$Html$text('');
+		}
+	});
+var author$project$Utils$onChange = function (handler) {
+	return A2(
+		elm$html$Html$Events$on,
+		'change',
+		A2(
+			elm$json$Json$Decode$map,
+			handler,
+			A2(
+				elm$json$Json$Decode$at,
+				_List_fromArray(
+					['target', 'value']),
+				elm$json$Json$Decode$string)));
+};
+var elm$html$Html$button = _VirtualDom_node('button');
 var elm$html$Html$option = _VirtualDom_node('option');
 var elm$html$Html$select = _VirtualDom_node('select');
 var elm$html$Html$Attributes$stringProperty = F2(
@@ -10795,37 +12673,36 @@ var elm$html$Html$Attributes$stringProperty = F2(
 			elm$json$Json$Encode$string(string));
 	});
 var elm$html$Html$Attributes$value = elm$html$Html$Attributes$stringProperty('value');
-var krisajenkins$remotedata$RemoteData$NotAsked = {$: 'NotAsked'};
-var krisajenkins$remotedata$RemoteData$map = F2(
-	function (f, data) {
-		switch (data.$) {
-			case 'Success':
-				var value = data.a;
-				return krisajenkins$remotedata$RemoteData$Success(
-					f(value));
-			case 'Loading':
-				return krisajenkins$remotedata$RemoteData$Loading;
-			case 'NotAsked':
-				return krisajenkins$remotedata$RemoteData$NotAsked;
-			default:
-				var error = data.a;
-				return krisajenkins$remotedata$RemoteData$Failure(error);
-		}
-	});
+var elm$html$Html$Events$onClick = function (msg) {
+	return A2(
+		elm$html$Html$Events$on,
+		'click',
+		elm$json$Json$Decode$succeed(msg));
+};
 var author$project$Main$view = function (model) {
 	return A2(
 		elm$html$Html$div,
 		_List_Nil,
 		_List_fromArray(
 			[
-				author$project$Main$viewMocks(model),
+				A2(
+				elm$html$Html$button,
+				_List_fromArray(
+					[
+						elm$html$Html$Events$onClick(author$project$Main$SelectFile)
+					]),
+				_List_fromArray(
+					[
+						elm$html$Html$text('Select File')
+					])),
+				A2(author$project$Main$viewPoints, model.points1, model.points2),
 				A2(
 				elm$html$Html$select,
 				_List_fromArray(
 					[
 						elm$html$Html$Attributes$value(
 						A2(elm$core$Maybe$withDefault, '', model.selectedCity)),
-						author$project$Main$onChange(author$project$Main$SelectCity)
+						author$project$Utils$onChange(author$project$Main$SelectCity)
 					]),
 				A2(
 					elm$core$List$map,
@@ -10842,11 +12719,11 @@ var author$project$Main$view = function (model) {
 								]));
 					},
 					A2(elm$core$List$cons, '', model.cities))),
-				author$project$Main$viewTaxes(
+				A2(author$project$Main$viewTaxes, model.selectedCity, model.taxes),
 				A2(
-					krisajenkins$remotedata$RemoteData$map,
-					author$project$Main$toFiltered(model.selectedCity),
-					model.taxes))
+				elm$core$Maybe$withDefault,
+				elm$html$Html$text(''),
+				A2(elm$core$Maybe$map, author$project$Astronaut$view, model.csvValue))
 			]));
 };
 var elm$browser$Browser$External = function (a) {
@@ -10858,69 +12735,6 @@ var elm$browser$Browser$Internal = function (a) {
 var elm$browser$Browser$Dom$NotFound = function (a) {
 	return {$: 'NotFound', a: a};
 };
-var elm$core$Basics$never = function (_n0) {
-	never:
-	while (true) {
-		var nvr = _n0.a;
-		var $temp$_n0 = nvr;
-		_n0 = $temp$_n0;
-		continue never;
-	}
-};
-var elm$core$Task$Perform = function (a) {
-	return {$: 'Perform', a: a};
-};
-var elm$core$Task$init = elm$core$Task$succeed(_Utils_Tuple0);
-var elm$core$Task$map = F2(
-	function (func, taskA) {
-		return A2(
-			elm$core$Task$andThen,
-			function (a) {
-				return elm$core$Task$succeed(
-					func(a));
-			},
-			taskA);
-	});
-var elm$core$Task$spawnCmd = F2(
-	function (router, _n0) {
-		var task = _n0.a;
-		return _Scheduler_spawn(
-			A2(
-				elm$core$Task$andThen,
-				elm$core$Platform$sendToApp(router),
-				task));
-	});
-var elm$core$Task$onEffects = F3(
-	function (router, commands, state) {
-		return A2(
-			elm$core$Task$map,
-			function (_n0) {
-				return _Utils_Tuple0;
-			},
-			elm$core$Task$sequence(
-				A2(
-					elm$core$List$map,
-					elm$core$Task$spawnCmd(router),
-					commands)));
-	});
-var elm$core$Task$onSelfMsg = F3(
-	function (_n0, _n1, _n2) {
-		return elm$core$Task$succeed(_Utils_Tuple0);
-	});
-var elm$core$Task$cmdMap = F2(
-	function (tagger, _n0) {
-		var task = _n0.a;
-		return elm$core$Task$Perform(
-			A2(elm$core$Task$map, tagger, task));
-	});
-_Platform_effectManagers['Task'] = _Platform_createManager(elm$core$Task$init, elm$core$Task$onEffects, elm$core$Task$onSelfMsg, elm$core$Task$cmdMap);
-var elm$core$Task$command = _Platform_leaf('Task');
-var elm$core$Task$perform = F2(
-	function (toMessage, task) {
-		return elm$core$Task$command(
-			elm$core$Task$Perform(
-				A2(elm$core$Task$map, toMessage, task)));
-	});
 var elm$browser$Debugger$Expando$ArraySeq = {$: 'ArraySeq'};
 var elm$browser$Debugger$Expando$Constructor = F3(
 	function (a, b, c) {
@@ -11108,13 +12922,6 @@ var elm$browser$Debugger$Overlay$viewBadMetadata = function (_n0) {
 };
 var elm$browser$Debugger$Overlay$Cancel = {$: 'Cancel'};
 var elm$browser$Debugger$Overlay$Proceed = {$: 'Proceed'};
-var elm$html$Html$button = _VirtualDom_node('button');
-var elm$html$Html$Events$onClick = function (msg) {
-	return A2(
-		elm$html$Html$Events$on,
-		'click',
-		elm$json$Json$Decode$succeed(msg));
-};
 var elm$browser$Debugger$Overlay$viewButtons = function (buttons) {
 	var btn = F2(
 		function (msg, string) {
@@ -11158,8 +12965,6 @@ var elm$browser$Debugger$Overlay$viewButtons = function (buttons) {
 			]),
 		buttonNodes);
 };
-var elm$virtual_dom$VirtualDom$map = _VirtualDom_map;
-var elm$html$Html$map = elm$virtual_dom$VirtualDom$map;
 var elm$html$Html$Attributes$id = elm$html$Html$Attributes$stringProperty('id');
 var elm$browser$Debugger$Overlay$viewMessage = F4(
 	function (config, title, details, buttons) {
@@ -12805,7 +14610,6 @@ var elm$browser$Debugger$Metadata$decodeUnion = A3(
 		'tags',
 		elm$json$Json$Decode$dict(
 			elm$json$Json$Decode$list(elm$json$Json$Decode$string))));
-var elm$json$Json$Decode$map3 = _Json_map3;
 var elm$browser$Debugger$Metadata$decodeTypes = A4(
 	elm$json$Json$Decode$map3,
 	elm$browser$Debugger$Metadata$Types,
@@ -13763,10 +15567,6 @@ var elm$browser$Debugger$Main$loadNewHistory = F3(
 				elm$core$Platform$Cmd$none);
 		}
 	});
-var elm$core$Basics$always = F2(
-	function (a, _n0) {
-		return a;
-	});
 var elm$browser$Debugger$Main$scroll = function (popout) {
 	return A2(
 		elm$core$Task$perform,
@@ -14403,4 +16203,4 @@ var elm$browser$Browser$element = _Browser_element;
 var author$project$Main$main = elm$browser$Browser$element(
 	{init: author$project$Main$init, subscriptions: author$project$Main$subscriptions, update: author$project$Main$update, view: author$project$Main$view});
 _Platform_export({'Main':{'init':author$project$Main$main(
-	elm$json$Json$Decode$succeed(_Utils_Tuple0))({"versions":{"elm":"0.19.0"},"types":{"message":"Main.Msg","aliases":{"Main.Tax":{"args":[],"type":"{ rate : Basics.Float, year : Basics.Float, kind : String.String, city : String.String }"},"Json.Decode.Value":{"args":[],"type":"Json.Encode.Value"}},"unions":{"Main.Msg":{"args":[],"tags":{"GotData":["Result.Result Http.Error (List.List Main.Tax)"],"SelectCity":["String.String"],"GotMoreData":["Result.Result Http.Error String.String"],"Parsed":["Json.Decode.Value"]}},"Basics.Float":{"args":[],"tags":{"Float":[]}},"List.List":{"args":["a"],"tags":{}},"Result.Result":{"args":["error","value"],"tags":{"Ok":["value"],"Err":["error"]}},"String.String":{"args":[],"tags":{"String":[]}},"Http.Error":{"args":[],"tags":{"BadUrl":["String.String"],"Timeout":[],"NetworkError":[],"BadStatus":["Basics.Int"],"BadBody":["String.String"]}},"Json.Encode.Value":{"args":[],"tags":{"Value":[]}},"Basics.Int":{"args":[],"tags":{"Int":[]}}}}})}});}(this));
+	elm$json$Json$Decode$succeed(_Utils_Tuple0))({"versions":{"elm":"0.19.0"},"types":{"message":"Main.Msg","aliases":{"Tax.Tax":{"args":[],"type":"{ rate : Basics.Float, year : Basics.Float, kind : String.String, city : String.String }"},"Json.Decode.Value":{"args":[],"type":"Json.Encode.Value"}},"unions":{"Main.Msg":{"args":[],"tags":{"GotData":["Result.Result Http.Error (List.List Tax.Tax)"],"SelectCity":["String.String"],"GotMoreData":["Result.Result Http.Error String.String"],"Parsed":["Json.Decode.Value"],"SelectFile":[],"FileSelected":["File.File"],"FileLoaded":["String.String"]}},"Basics.Float":{"args":[],"tags":{"Float":[]}},"List.List":{"args":["a"],"tags":{}},"Result.Result":{"args":["error","value"],"tags":{"Ok":["value"],"Err":["error"]}},"String.String":{"args":[],"tags":{"String":[]}},"File.File":{"args":[],"tags":{"File":[]}},"Http.Error":{"args":[],"tags":{"BadUrl":["String.String"],"Timeout":[],"NetworkError":[],"BadStatus":["Basics.Int"],"BadBody":["String.String"]}},"Json.Encode.Value":{"args":[],"tags":{"Value":[]}},"Basics.Int":{"args":[],"tags":{"Int":[]}}}}})}});}(this));
